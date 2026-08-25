@@ -1,77 +1,70 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import axios from 'axios';
 
 const prisma = new PrismaClient();
 
-// Função de busca SEFAZ (Exemplo com API Menor Preço Brasil)
-async function buscarPrecoMedioSefaz(termo: string, regiao: string) {
-  try {
-    // Exemplo de integração com a API da SEFAZ / Menor Preço
-    // Em produção, adapte para o endpoint exato da SEFAZ da sua região
-    const response = await axios.get(`https://menorpreco.notaparana.pr.gov.br/api/v1/produtos`, {
-      params: { termo, limit: 5 }
-    });
-    
-    if (response.data && response.data.produtos?.length > 0) {
-      const soma = response.data.produtos.reduce((acc: number, item: any) => acc + item.preco, 0);
-      return soma / response.data.produtos.length;
-    }
-    return 0;
-  } catch (error) {
-    return null; // Caso a API esteja inativa ou produto não encontrado
-  }
-}
-
 export async function POST(req: Request) {
   try {
-    const { listaId, regioesUsuario } = await req.json();
+    const { listaId } = await req.json();
 
+    // Se for a lista padrão em memória
+    if (listaId === 'padrao') {
+      const itensPadrao = [
+        { id: 'p1', nome: 'Arroz 5kg', quantidade: 1 },
+        { id: 'p2', nome: 'Feijão Carioca 1kg', quantidade: 2 },
+        { id: 'p3', nome: 'Óleo de Soja 900ml', quantidade: 2 },
+        { id: 'p4', nome: 'Leite Integral 1L', quantidade: 6 },
+        { id: 'p5', nome: 'Açúcar Refinado 1kg', quantidade: 1 },
+        { id: 'p6', nome: 'Café Torrado 500g', quantidade: 2 },
+        { id: 'p7', nome: 'Sabão em Pó 1kg', quantidade: 1 },
+      ];
+
+      // Busca ofertas cadastradas no histórico para comparar
+      const ofertas = await prisma.oferta.findMany();
+
+      const comparacao = itensPadrao.map((item) => {
+        const ofertasItem = ofertas.filter((o) =>
+          o.produto.toLowerCase().includes(item.nome.toLowerCase())
+        );
+        return {
+          produto: item.nome,
+          quantidade: item.quantidade,
+          ofertas: ofertasItem,
+        };
+      });
+
+      return NextResponse.json({ comparacao });
+    }
+
+    // Busca a lista personalizada incluindo a relação de itens para evitar o erro do TypeScript
     const lista = await prisma.lista.findUnique({
       where: { id: listaId },
-      include: { itens: { include: { produtoGenerico: true } } },
+      include: {
+        itens: true, // Adiciona o include para o Prisma retornar a relação 'itens'
+      },
     });
 
-    if (!lista) return NextResponse.json({ error: 'Lista não encontrada' }, { status: 404 });
+    if (!lista) {
+      return NextResponse.json({ error: 'Lista não encontrada' }, { status: 404 });
+    }
 
-    const resultadoComparacao = await Promise.all(
-      lista.itens.map(async (item) => {
-        const nomeBusca = item.produtoGenerico?.nome || item.nomePersonalizado || '';
+    const ofertas = await prisma.oferta.findMany();
 
-        // 1. Busca ofertas ativas enviadas por Crowdsourcing nas regiões do usuário
-        const ofertasFolhetos = await prisma.oferta.findMany({
-          where: {
-            produto: { contains: nomeBusca, mode: 'insensitive' },
-            regiao: { in: regioesUsuario },
-            validade: { gte: new Date() }, // Oferta ainda válida
-          },
-          orderBy: { preco: 'asc' },
-        });
+    // Tipagem correta do parâmetro 'item'
+    const comparacao = lista.itens.map((item) => {
+      const ofertasItem = ofertas.filter((o) =>
+        o.produto.toLowerCase().includes(item.nome.toLowerCase())
+      );
+      return {
+        produto: item.nome,
+        quantidade: item.quantidade,
+        ofertas: ofertasItem,
+      };
+    });
 
-        if (ofertasFolhetos.length > 0) {
-          return {
-            produto: nomeBusca,
-            fonte: 'FOLHETO_CROWDSOURCING',
-            menorPreco: ofertasFolhetos[0].preco,
-            mercado: ofertasFolhetos[0].mercado,
-            todasOfertas: ofertasFolhetos,
-          };
-        }
-
-        // 2. Fallback: Se não houver folheto, busca a média na SEFAZ
-        const precoMedioSefaz = await buscarPrecoMedioSefaz(nomeBusca, regioesUsuario[0]);
-
-        return {
-          produto: nomeBusca,
-          fonte: 'SEFAZ_MEDIA',
-          precoMedio: precoMedioSefaz || 'Indisponível',
-          mercado: 'Média de Mercado (NFC-e)',
-        };
-      })
-    );
-
-    return NextResponse.json(resultadoComparacao);
+    return NextResponse.json({ comparacao });
   } catch (error) {
-    return NextResponse.json({ error: 'Erro na comparação de preços' }, { status: 500 });
+    console.error(error);
+    return NextResponse.json({ error: 'Erro ao processar comparação' }, { status: 500 });
   }
 }

@@ -1,10 +1,10 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
 }
 
 enum Regiao {
@@ -26,40 +26,33 @@ model Usuario {
   createdAt DateTime @default(now())
 }
 
-model ProdutoGenerico {
-  id          String      @id @default(cuid())
-  nome        String      @unique
-  categoria   String
-  itensLista  ItemLista[]
-}
-
 model Lista {
   id        String      @id @default(cuid())
   nome      String
-  usuarioId String
-  usuario   Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  isPadrao  Boolean     @default(false)
+  usuarioId String?
+  usuario   Usuario?    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   itens     ItemLista[]
   createdAt DateTime    @default(now())
 }
 
 model ItemLista {
-  id                String           @id @default(cuid())
-  listaId           String
-  lista             Lista            @relation(fields: [listaId], references: [id], onDelete: Cascade)
-  produtoGenericoId String?
-  produtoGenerico   ProdutoGenerico? @relation(fields: [produtoGenericoId], references: [id])
-  nomePersonalizado String?
-  quantidade        Int              @default(1)
+  id         String  @id @default(cuid())
+  listaId    String
+  lista      Lista   @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  nome       String
+  quantidade Int     @default(1)
+  comprado   Boolean @default(false)
 }
 
 model Oferta {
-  id              String   @id @default(cuid())
-  mercado         String
-  regiao          Regiao
-  validade        DateTime
-  produto         String
-  preco           Float
-  usuarioId       String
-  usuario         Usuario  @relation(fields: [usuarioId], references: [id])
-  createdAt       DateTime @default(now())
+  id        String   @id @default(cuid())
+  mercado   String
+  regiao    Regiao
+  validade  DateTime?
+  produto   String
+  preco     Float
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  createdAt DateTime @default(now())
 }

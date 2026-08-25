@@ -1,0 +1,65 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Regiao {
+  NORTE
+  NORDESTE
+  CENTRO_OESTE
+  SUDESTE
+  SUL
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  usuario   String   @unique
+  senha     String
+  regioes   Regiao[]
+  listas    Lista[]
+  ofertas   Oferta[]
+  createdAt DateTime @default(now())
+}
+
+model ProdutoGenerico {
+  id          String      @id @default(cuid())
+  nome        String      @unique
+  categoria   String
+  itensLista  ItemLista[]
+}
+
+model Lista {
+  id        String      @id @default(cuid())
+  nome      String
+  usuarioId String
+  usuario   Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  itens     ItemLista[]
+  createdAt DateTime    @default(now())
+}
+
+model ItemLista {
+  id                String           @id @default(cuid())
+  listaId           String
+  lista             Lista            @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  produtoGenericoId String?
+  produtoGenerico   ProdutoGenerico? @relation(fields: [produtoGenericoId], references: [id])
+  nomePersonalizado String?
+  quantidade        Int              @default(1)
+}
+
+model Oferta {
+  id              String   @id @default(cuid())
+  mercado         String
+  regiao          Regiao
+  validade        DateTime
+  produto         String
+  preco           Float
+  usuarioId       String
+  usuario         Usuario  @relation(fields: [usuarioId], references: [id])
+  createdAt       DateTime @default(now())
+}

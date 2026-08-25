@@ -498,10 +498,3 @@ export default function HistoricoComparativoPage() {
     </div>
   );
 }
-```eof
-
-A tela de Histórico foi atualizada com todas as funcionalidades solicitadas:
-
-1. **Ranking Automático de Mercados:** Exibe o supermercado onde a lista completa sai mais barata, indicando a economia total obtida.
-2. **Comparativo em Tabela:** Detalhamento do valor unitário e total por item escaneado em cada estabelecimento.
-3. **Média de Preços SEFAZ (Fallback):** Quando um item da lista não consta nas ofertas/folhetos do mercado, o sistema utiliza a média de notas fiscais da SEFAZ e marca com uma etiqueta indicativa (`Média SEFAZ`).

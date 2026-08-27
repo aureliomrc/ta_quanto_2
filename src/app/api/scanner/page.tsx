@@ -43,7 +43,7 @@ export default function LeitorFolhetoPage() {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
     } catch (err) {
-      setMensagem('❌ Erro de conexão.');
+      setMensagem('❌ Erro de conexão com o servidor.');
     } finally {
       setCarregando(false);
     }
@@ -52,28 +52,36 @@ export default function LeitorFolhetoPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
+        {/* Cabeçalho */}
         <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
           <span className="text-2xl">📷</span>
-          <h1 className="text-lg font-black text-emerald-700 uppercase">LEITOR DE FOLHETO (IA)</h1>
+          <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
+            LEITOR DE FOLHETO (IA)
+          </h1>
         </header>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3">
+        {/* Formulário de Configuração */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Mercado</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Nome Fantasia do Mercado
+            </label>
             <input
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm"
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Região</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Região do Folheto
+            </label>
             <select
               value={regiao}
               onChange={(e) => setRegiao(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white"
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="SUDESTE">SUDESTE</option>
               <option value="SUL">SUL</option>
@@ -84,32 +92,36 @@ export default function LeitorFolhetoPage() {
           </div>
         </div>
 
-        {/* ÁREA DE CAPTURA SIMPLES */}
-        <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[220px]">
+        {/* ÁREA DE CAPTURA COM LABEL NATIVO (Desencadeia oSeletor do SO) */}
+        <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[240px] shadow-lg border border-slate-800">
           {imagemBase64 ? (
-            <div className="w-full space-y-3 text-center">
-              <img src={imagemBase64} alt="Foto" className="max-h-52 mx-auto rounded-lg object-contain" />
+            <div className="w-full space-y-4 text-center">
+              <img
+                src={imagemBase64}
+                alt="Foto Selecionada"
+                className="max-h-56 w-auto mx-auto rounded-xl border border-slate-700 object-contain shadow-md"
+              />
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setImagemBase64(null)}
-                  className="flex-1 bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs"
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-xs"
                 >
-                  Refazer
+                  Tirar Outra
                 </button>
                 <button
                   type="button"
                   onClick={handleEnviar}
                   disabled={carregando}
-                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs disabled:opacity-50"
                 >
-                  {carregando ? 'Enviando...' : 'Analisar'}
+                  {carregando ? 'Processando...' : 'Analisar Preços'}
                 </button>
               </div>
             </div>
           ) : (
-            <label className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-6 rounded-2xl text-sm cursor-pointer shadow-lg active:scale-95 transition-all text-center">
-              📸 TIKAR FOTO OU ESCOLHER
+            <label className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-8 rounded-2xl text-sm cursor-pointer shadow-xl active:scale-95 transition-all text-center">
+              📸 TIRAR FOTO DA GÔNDOLA / FOLHETO
               <input
                 type="file"
                 accept="image/*"
@@ -121,20 +133,21 @@ export default function LeitorFolhetoPage() {
         </div>
 
         {mensagem && (
-          <div className="bg-white p-3 rounded-xl border text-center text-xs font-bold text-slate-800">
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
             {mensagem}
           </div>
         )}
       </div>
 
-      <nav className="bg-white border-t px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
-        <Link href="/listas" className="text-slate-400 text-xs font-bold flex flex-col items-center">
+      {/* Navegação Inferior */}
+      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
+        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📋</span> Listas
         </Link>
-        <Link href="/scanner" className="text-emerald-600 text-xs font-bold flex flex-col items-center">
+        <Link href="/scanner" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
           <span>📷</span> Comparar
         </Link>
-        <Link href="/historico" className="text-slate-400 text-xs font-bold flex flex-col items-center">
+        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📜</span> Histórico
         </Link>
       </nav>

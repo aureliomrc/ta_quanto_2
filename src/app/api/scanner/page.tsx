@@ -12,7 +12,7 @@ export default function LeitorFolhetoPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Captura a foto assim que o aplicativo de câmera do celular tira e fecha
+  // Lê a imagem capturada e converte para Base64
   const handleCapturaFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -25,7 +25,7 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Envia a foto processada para a API salvar os preços lidos
+  // Envia a imagem para a rota do Gemini
   const handleEnviar = async () => {
     if (!imagemBase64) return;
     setCarregando(true);
@@ -101,23 +101,22 @@ export default function LeitorFolhetoPage() {
           </div>
         </div>
 
-        {/* INPUT DE FOTO NATIVO QUE NÃO TRAVA A CÂMERA */}
+        {/* INPUT DE FOTO LIMPO - Sem 'capture' para evitar que o Android tente abrir stream de vídeo */}
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           ref={inputRef}
           onChange={handleCapturaFoto}
           className="hidden"
         />
 
-        {/* Container Principal */}
+        {/* Container da Câmera / Foto */}
         <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800">
           {imagemBase64 ? (
             <div className="w-full space-y-4 text-center">
               <img
                 src={imagemBase64}
-                alt="Pré-visualização da Foto"
+                alt="Foto Selecionada"
                 className="max-h-60 w-auto mx-auto rounded-xl border border-slate-700 object-contain shadow-md"
               />
               <div className="flex gap-2">
@@ -126,7 +125,7 @@ export default function LeitorFolhetoPage() {
                   onClick={() => setImagemBase64(null)}
                   className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-xs"
                 >
-                  Refazer Foto
+                  Tirar Outra
                 </button>
                 <button
                   type="button"
@@ -134,7 +133,7 @@ export default function LeitorFolhetoPage() {
                   disabled={carregando}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs disabled:opacity-50"
                 >
-                  {carregando ? 'Enviando...' : 'Analisar Preços'}
+                  {carregando ? 'Processando...' : 'Analisar Preços'}
                 </button>
               </div>
             </div>
@@ -144,7 +143,7 @@ export default function LeitorFolhetoPage() {
               onClick={() => inputRef.current?.click()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-8 rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
             >
-              📷 Tirar Foto (Câmera)
+              📷 Tirar Foto / Selecionar
             </button>
           )}
         </div>

@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Requisição HTTP direta usando a nova Auth Key (AQ...) via cabeçalhos padrão
+    // Requisição HTTP direta usando a versão v1beta e o cabeçalho x-goog-api-key
     const response = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
       {
@@ -31,7 +31,6 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey,
-          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           contents: [
@@ -59,7 +58,7 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Erro na API Gemini:', data);
+      console.error('Erro retornado pela API do Gemini:', data);
       return NextResponse.json(
         { error: data.error?.message || 'Erro ao comunicar com a API do Gemini.' },
         { status: response.status }

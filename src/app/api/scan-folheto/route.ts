@@ -24,10 +24,12 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
+    // Força a utilização da API v1 estável no SDK
     const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Atualizado para o alias compatível
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    const model = genAI.getGenerativeModel(
+      { model: 'gemini-1.5-flash' },
+      { apiVersion: 'v1' }
+    );
 
     const prompt = `
       Você é um leitor de folhetos de oferta. 

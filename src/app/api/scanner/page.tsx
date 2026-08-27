@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import Link from 'next/link';
 
 export default function LeitorFolhetoPage() {
@@ -10,22 +10,10 @@ export default function LeitorFolhetoPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
 
-  const inputCameraRef = useRef<HTMLInputElement>(null);
-  const inputGaleriaRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Garante que qualquer stream de câmera em segundo plano seja desligado ao entrar na página
-  useEffect(() => {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then((stream) => {
-          stream.getTracks().forEach((track) => track.stop());
-        })
-        .catch(() => {});
-    }
-  }, []);
-
-  // Processa o arquivo retornado da câmera ou galeria
-  const handleCaptura = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Lê a foto tirada pelo aplicativo de câmera do celular e converte em imagem
+  const handleCapturaFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -37,7 +25,7 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Envia a imagem capturada para a API do Gemini / Prisma
+  // Envia a foto processada para a API salvar os preços lidos
   const handleEnviar = async () => {
     if (!imagemBase64) return;
     setCarregando(true);
@@ -64,7 +52,7 @@ export default function LeitorFolhetoPage() {
       }
     } catch (err) {
       console.error(err);
-      setMensagem('❌ Erro ao conectar com o servidor.');
+      setMensagem('❌ Erro de conexão com o servidor.');
     } finally {
       setCarregando(false);
     }
@@ -81,7 +69,7 @@ export default function LeitorFolhetoPage() {
           </h1>
         </header>
 
-        {/* Configurações do Mercado */}
+        {/* Formulário do Mercado */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -113,70 +101,54 @@ export default function LeitorFolhetoPage() {
           </div>
         </div>
 
-        {/* INPUTS OCULTOS (Evitam que o Chrome fique preso em stream de vídeo) */}
+        {/* INPUT DE FOTO NATI️VO DO SISTEMA */}
         <input
           type="file"
           accept="image/*"
           capture="environment"
-          ref={inputCameraRef}
-          onChange={handleCaptura}
+          ref={inputRef}
+          onChange={handleCapturaFoto}
           className="hidden"
         />
 
-        <input
-          type="file"
-          accept="image/*"
-          ref={inputGaleriaRef}
-          onChange={handleCaptura}
-          className="hidden"
-        />
-
-        {/* Área Central de Captura e Pré-visualização */}
-        <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[280px] shadow-lg relative overflow-hidden border border-slate-800">
+        {/* Container Principal */}
+        <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800">
           {imagemBase64 ? (
-            <div className="w-full space-y-4">
+            <div className="w-full space-y-4 text-center">
               <img
                 src={imagemBase64}
-                alt="Foto Capturada"
+                alt="Pré-visualização da Foto"
                 className="max-h-60 w-auto mx-auto rounded-xl border border-slate-700 object-contain shadow-md"
               />
               <div className="flex gap-2">
                 <button
                   onClick={() => setImagemBase64(null)}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-xs transition-all"
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-xs"
                 >
-                  Tirar Outra Foto
+                  Refazer Foto
                 </button>
                 <button
                   onClick={handleEnviar}
                   disabled={carregando}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs disabled:opacity-50 transition-all shadow-md"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs disabled:opacity-50"
                 >
-                  {carregando ? 'Processando IA...' : 'Analisar & Salvar'}
+                  {carregando ? 'Enviando...' : 'Analisar Preços'}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="w-full space-y-3">
-              <button
-                onClick={() => inputCameraRef.current?.click()}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2"
-              >
-                <span>📸</span> Abrir Câmera do Celular
-              </button>
-
-              <button
-                onClick={() => inputGaleriaRef.current?.click()}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 px-6 rounded-xl text-xs transition-all active:scale-95 border border-slate-700 flex items-center justify-center gap-2"
-              >
-                <span>🖼️</span> Escolher da Galeria
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-8 rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
+            >
+              📷 Abrir Câmera do Celular
+            </button>
           )}
         </div>
 
         {mensagem && (
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
+          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
             {mensagem}
           </div>
         )}

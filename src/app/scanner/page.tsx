@@ -1,167 +1,259 @@
 'use client';
-import { useState, useRef } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
-export default function ScannerPage() {
-  const router = useRouter();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  
-  const [imagem, setImagem] = useState<string | null>(null);
-  const [mercado, setMercado] = useState('');
+export default function LeitorFolhetoPage() {
+  const [mercado, setMercado] = useState('Assaí');
   const [regiao, setRegiao] = useState('SUDESTE');
+  const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
-  const [cameraAtiva, setCameraAtiva] = useState(false);
+  const [mensagem, setMensagem] = useState('');
+  const [streamAtivo, setStreamAtivo] = useState(false);
 
-  // Ativar Câmera
-  const abrirCamera = async () => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const inputArquivoRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Desliga o hardware da câmera imediatamente
+  const desligarCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setStreamAtivo(false);
+  };
+
+  useEffect(() => {
+    return () => desligarCamera();
+  }, []);
+
+  // Tenta ligar a webcam (ideal para Desktop)
+  const iniciarWebcam = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setCameraAtiva(true);
-      }
+      setMensagem('');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 } },
+      });
+      streamRef.current = stream;
+      setStreamAtivo(true);
+
+      // Aguarda a renderização do elemento video no React
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      }, 100);
     } catch (err) {
-      alert('Não foi possível acessar a câmera do aparelho.');
+      console.log('Navegador bloqueou stream de vídeo ou está no celular. Redirecionando para arquivo.');
+      // Se der erro ou estiver no mobile, abre o leitor nativo
+      inputArquivoRef.current?.click();
     }
   };
 
-  // Capturar Foto
-  const tirarFoto = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d')?.drawImage(video, 0, 0);
-    setImagem(canvas.toDataURL('image/jpeg'));
-    setCameraAtiva(false);
+  // Tira foto do feed do vídeo (<canvas>)
+  const capturarFotoVideo = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        setImagemBase64(canvas.toDataURL('image/jpeg'));
+        desligarCamera();
+      }
+    }
   };
 
-  // Processar com Gemini e Salvar no Histórico
-  const processarEGuardar = async () => {
-    if (!imagem || !mercado.trim()) {
-      alert('Por favor, informe o nome do mercado e tire uma foto do folheto.');
-      return;
+  // Lê arquivo ou foto tirada pelo celular
+  const handleUploadArquivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagemBase64(reader.result as string);
+        setMensagem('');
+      };
+      reader.readAsDataURL(file);
     }
+  };
 
+  // Envia a imagem extraída para a API Gemini
+  const handleEnviar = async () => {
+    if (!imagemBase64) return;
     setCarregando(true);
-    try {
-      const blob = await (await fetch(imagem)).blob();
-      const formData = new FormData();
-      formData.append('imagem', blob, 'folheto.jpg');
-      formData.append('mercado', mercado);
-      formData.append('regiao', regiao);
+    setMensagem('Analisando imagem com a IA...');
 
+    try {
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imagemBase64, mercado, regiao }),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        alert('Folheto processado e ofertas salvas no histórico com sucesso!');
-        router.push('/historico');
+        setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s).`);
+        setImagemBase64(null);
       } else {
-        alert('Falha ao extrair dados do folheto.');
+        setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
     } catch (err) {
-      alert('Erro ao enviar a imagem.');
+      setMensagem('❌ Erro de conexão com o servidor.');
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] flex flex-col justify-between pb-20">
-      <header className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-2 text-lg font-black text-[#008744]">
-          <span>📷</span> LEITOR DE FOLHETO (IA)
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
+      <div className="space-y-4">
+        {/* Cabeçalho */}
+        <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
+          <span className="text-2xl">📷</span>
+          <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
+            LEITOR DE FOLHETO (IA)
+          </h1>
+        </header>
 
-      <main className="flex-1 max-w-lg w-full mx-auto p-4 space-y-4">
-        {/* Formulário de Dados do Mercado */}
-        <div className="bg-white p-4 rounded-2xl border space-y-3">
+        {/* Inputs de Mercado */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">Nome Fantasia do Mercado</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Mercado</label>
             <input
               type="text"
-              placeholder="Ex: Supermercado Carrefour, Extra..."
               value={mercado}
-              onChange={e => setMercado(e.target.value)}
-              className="w-full border p-2.5 text-xs rounded-xl focus:outline-none"
-              required
+              onChange={(e) => setMercado(e.target.value)}
+              placeholder="Ex: Supermercado Carrefour, Extra..."
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">Região do Folheto</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Região do Folheto</label>
             <select
               value={regiao}
-              onChange={e => setRegiao(e.target.value)}
-              className="w-full border p-2.5 text-xs rounded-xl focus:outline-none bg-white"
+              onChange={(e) => setRegiao(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              <option value="SUL">SUL</option>
               <option value="SUDESTE">SUDESTE</option>
-              <option value="NORTE">NORTE</option>
+              <option value="SUL">SUL</option>
               <option value="NORDESTE">NORDESTE</option>
-              <option value="CENTRO_OESTE">CENTRO_OESTE</option>
+              <option value="CENTRO-OESTE">CENTRO-OESTE</option>
+              <option value="NORTE">NORTE</option>
             </select>
           </div>
         </div>
 
-        {/* Visor / Preview */}
-        <div className="bg-black rounded-2xl overflow-hidden relative min-h-[250px] flex items-center justify-center">
-          {!imagem && !cameraAtiva && (
-            <button onClick={abrirCamera} className="bg-[#008744] text-white font-bold text-xs px-4 py-3 rounded-xl">
-              Abrir Câmera do Celular
-            </button>
-          )}
+        {/* Elemento oculto para upload no celular */}
+        <input
+          type="file"
+          accept="image/*"
+          ref={inputArquivoRef}
+          onChange={handleUploadArquivo}
+          className="hidden"
+        />
 
-          {cameraAtiva && (
-            <div className="w-full text-center space-y-2">
-              <video ref={videoRef} autoPlay playsInline className="w-full h-64 object-cover" />
-              <button onClick={tirarFoto} className="bg-red-600 text-white font-bold text-xs px-6 py-2 rounded-full my-2">
-                Tirar Foto 📸
-              </button>
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Área Central de Captura */}
+        <div className="bg-black rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800 relative overflow-hidden">
+          {imagemBase64 ? (
+            <div className="w-full space-y-3 text-center">
+              <img
+                src={imagemBase64}
+                alt="Foto Selecionada"
+                className="max-h-56 mx-auto rounded-xl object-contain border border-slate-700"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImagemBase64(null);
+                    desligarCamera();
+                  }}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl font-bold text-xs"
+                >
+                  Tirar Outra
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEnviar}
+                  disabled={carregando}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
+                >
+                  {carregando ? 'Processando...' : 'Analisar Preços'}
+                </button>
+              </div>
             </div>
-          )}
-
-          {imagem && (
-            <div className="w-full space-y-2">
-              <img src={imagem} alt="Folheto" className="w-full h-64 object-cover" />
-              <button onClick={() => setImagem(null)} className="w-full bg-gray-700 text-white text-xs py-2 font-bold">
-                Tirar Outra Foto
+          ) : streamAtivo ? (
+            <div className="w-full flex flex-col items-center space-y-3">
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                className="w-full max-h-56 rounded-xl object-cover border border-slate-700"
+              />
+              <div className="flex gap-2 w-full">
+                <button
+                  type="button"
+                  onClick={desligarCamera}
+                  className="flex-1 bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={capturarFotoVideo}
+                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs"
+                >
+                  📸 Capturar Frame
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 w-full max-w-xs">
+              <button
+                type="button"
+                onClick={iniciarWebcam}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 px-4 rounded-xl text-xs shadow-lg active:scale-95 transition-all"
+              >
+                📹 Ativar Câmera / Webcam
+              </button>
+              <button
+                type="button"
+                onClick={() => inputArquivoRef.current?.click()}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 px-4 rounded-xl text-xs border border-slate-700 active:scale-95 transition-all"
+              >
+                🖼️ Selecionar Foto / Galeria
               </button>
             </div>
           )}
         </div>
 
-        {/* Botão de envio */}
-        {imagem && (
-          <button
-            onClick={processarEGuardar}
-            disabled={carregando}
-            className="w-full bg-[#008744] hover:bg-[#007038] text-white font-bold py-3.5 rounded-2xl shadow-md transition text-xs"
-          >
-            {carregando ? 'Gemini IA Analisando Folheto...' : 'Extrair Produtos e Salvar no Histórico'}
-          </button>
+        {mensagem && (
+          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
+            {mensagem}
+          </div>
         )}
-      </main>
+      </div>
 
       {/* Navegação Inferior */}
-      <nav className="bg-white border-t border-gray-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
-        <Link href="/listas" className="flex flex-col items-center text-gray-400 hover:text-[#008744]">
-          <span className="text-xl">📋</span>
-          <span className="text-xs font-bold mt-1">Listas</span>
+      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
+        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
+          <span>📋</span> Listas
         </Link>
-        <Link href="/scanner" className="flex flex-col items-center text-[#008744]">
-          <span className="text-xl">📷</span>
-          <span className="text-xs font-bold mt-1">Comparar (Folheto)</span>
+        <Link href="/scanner" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
+          <span>📷</span> Comparar
         </Link>
-        <Link href="/historico" className="flex flex-col items-center text-gray-400 hover:text-[#008744]">
-          <span className="text-xl">📜</span>
-          <span className="text-xs font-bold mt-1">Histórico</span>
+        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
+          <span>📜</span> Histórico
         </Link>
       </nav>
     </div>

@@ -3,144 +3,165 @@
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
 
-export default function ScannerPage() {
-  const [imagem, setImagem] = useState<string | null>(null);
+export default function LeitorFolhetoPage() {
+  const [mercado, setMercado] = useState('Assai');
+  const [regiao, setRegiao] = useState('SUDESTE');
+  const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
-  
-  // Referências para os inputs de arquivo
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galeriaInputRef = useRef<HTMLInputElement>(null);
 
-  // Converte a imagem para Base64 para enviar à API
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Converte a imagem selecionada/tirada para Base64
+  const handleCaptura = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagem(reader.result as string);
+        setImagemBase64(reader.result as string);
+        setMensagem('');
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const enviarParaProcessamento = async () => {
-    if (!imagem) return;
+  // Envia os dados e a imagem para a API
+  const handleEnviar = async () => {
+    if (!imagemBase64) return;
     setCarregando(true);
-    setMensagem('Analisando imagem (folheto, etiqueta ou gôndola)...');
+    setMensagem('Analisando imagem com a IA...');
 
     try {
-      const response = await fetch('/api/scan-folheto', {
+      const res = await fetch('/api/scan-folheto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imagemBase64: imagem }),
+        body: JSON.stringify({
+          imagemBase64,
+          mercado,
+          regiao,
+        }),
       });
 
-      const data = await response.json();
+      const data = await res.json();
 
-      if (response.ok) {
-        setMensagem(`✅ Sucesso! ${data.ofertas?.length || 0} preço(s) salvos no histórico.`);
-        setImagem(null);
+      if (res.ok) {
+        setMensagem(`✅ Sucesso! ${data.totalProcessados || data.ofertas?.length || 0} oferta(s) salva(s).`);
+        setImagemBase64(null);
       } else {
-        setMensagem(`❌ Erro: ${data.error || 'Falha ao ler imagem.'}`);
+        setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
     } catch (err) {
       console.error(err);
-      setMensagem('❌ Erro de conexão ao enviar imagem.');
+      setMensagem('❌ Erro ao conectar com o servidor.');
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] pb-24 p-4 max-w-lg mx-auto">
-      <header className="bg-white p-4 rounded-2xl border mb-4 shadow-sm text-center">
-        <h1 className="text-lg font-black text-[#008744]">📷 CAPTURAR PREÇOS</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Tire foto de <strong>Folhetos</strong>, <strong>Etiquetas de Gôndola</strong> ou <strong>Cartazes de Oferta</strong>.
-        </p>
-      </header>
+    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-20 font-sans">
+      <div className="space-y-4">
+        {/* Cabeçalho */}
+        <header className="flex items-center gap-2 border-b pb-3">
+          <span className="text-xl">📷</span>
+          <h1 className="text-lg font-extrabold text-emerald-700 uppercase tracking-tight">
+            Leitor de Folheto (IA)
+          </h1>
+        </header>
 
-      {/* INPUTS ESCONDIDOS COM OS ATRIBUTOS CORRETOS */}
-      {/* Câmera direta (capture="environment" abre a câmera traseira do celular) */}
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        ref={cameraInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      {/* Galeria de Fotos */}
-      <input
-        type="file"
-        accept="image/*"
-        ref={galeriaInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      {/* ÁREA DE PRÉ-VISUALIZAÇÃO DA FOTO OU BOTÕES DE CAPTURA */}
-      <div className="bg-white p-6 rounded-2xl border shadow-sm text-center mb-4">
-        {imagem ? (
-          <div className="space-y-4">
-            <img src={imagem} alt="Pré-visualização" className="w-full max-h-64 object-contain rounded-lg border" />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setImagem(null)}
-                className="flex-1 bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-xs"
-              >
-                Refazer Foto
-              </button>
-              <button
-                onClick={enviarParaProcessamento}
-                disabled={carregando}
-                className="flex-1 bg-[#008744] text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
-              >
-                {carregando ? 'Processando...' : 'Salvar Preços'}
-              </button>
-            </div>
+        {/* Formulário de Configuração */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Nome Fantasia do Mercado
+            </label>
+            <input
+              type="text"
+              value={mercado}
+              onChange={(e) => setMercado(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
           </div>
-        ) : (
-          <div className="space-y-4 py-4">
-            <div className="text-4xl">📸</div>
-            <p className="text-xs text-slate-600 font-medium">Como deseja enviar a foto?</p>
-            
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => cameraInputRef.current?.click()}
-                className="w-full bg-[#008744] text-white py-3 rounded-xl font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <span>📷</span> Abrir Câmera do Celular
-              </button>
-              
-              <button
-                onClick={() => galeriaInputRef.current?.click()}
-                className="w-full bg-slate-100 text-slate-700 border py-3 rounded-xl font-bold text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <span>🖼️</span> Escolher da Galeria
-              </button>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Região do Folheto
+            </label>
+            <select
+              value={regiao}
+              onChange={(e) => setRegiao(e.target.value)}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="SUDESTE">SUDESTE</option>
+              <option value="SUL">SUL</option>
+              <option value="NORDESTE">NORDESTE</option>
+              <option value="CENTRO-OESTE">CENTRO-OESTE</option>
+              <option value="NORTE">NORTE</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Input oculta para acionar a câmera nativa do celular */}
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          ref={inputRef}
+          onChange={handleCaptura}
+          className="hidden"
+        />
+
+        {/* Área de Visualização e Botão */}
+        <div className="bg-black rounded-2xl p-6 flex flex-col items-center justify-center min-h-[280px] shadow-inner text-center relative overflow-hidden">
+          {imagemBase64 ? (
+            <div className="w-full space-y-4">
+              <img
+                src={imagemBase64}
+                alt="Foto Capturada"
+                className="max-h-56 w-auto mx-auto rounded-lg border border-slate-700 object-contain"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setImagemBase64(null)}
+                  className="flex-1 bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs"
+                >
+                  Tirar Outra
+                </button>
+                <button
+                  onClick={handleEnviar}
+                  disabled={carregando}
+                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
+                >
+                  {carregando ? 'Processando...' : 'Processar Foto'}
+                </button>
+              </div>
             </div>
+          ) : (
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl text-sm transition-all active:scale-95 shadow-lg"
+            >
+              Abrir Câmera do Celular
+            </button>
+          )}
+        </div>
+
+        {mensagem && (
+          <div className="bg-white p-3 rounded-xl border text-center text-xs font-bold text-slate-800 shadow-sm">
+            {mensagem}
           </div>
         )}
       </div>
 
-      {mensagem && (
-        <div className="bg-white p-4 rounded-xl border text-center text-xs font-bold text-slate-700 shadow-sm">
-          {mensagem}
-        </div>
-      )}
-
-      {/* NAVEGAÇÃO INFERIOR */}
+      {/* Navegação Inferior */}
       <nav className="bg-white border-t px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
-        <Link href="/listas" className="flex flex-col items-center text-gray-400 text-xs font-bold">
+        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📋</span> Listas
         </Link>
-        <Link href="/scanner" className="flex flex-col items-center text-[#008744] text-xs font-bold">
+        <Link href="/scanner" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
           <span>📷</span> Comparar
         </Link>
-        <Link href="/historico" className="flex flex-col items-center text-gray-400 text-xs font-bold">
+        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📜</span> Histórico
         </Link>
       </nav>

@@ -20,17 +20,18 @@ export async function POST(req: Request) {
       );
     }
 
-    // Trata e limpa o cabeçalho do Base64
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Requisição REST direta enviando a chave no formato do Google Cloud / AI Studio Enterprise
+    // Requisição HTTP direta usando a nova Auth Key (AQ...) via cabeçalhos padrão
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           contents: [
@@ -58,23 +59,21 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Erro retornado pela API Gemini:', data);
+      console.error('Erro na API Gemini:', data);
       return NextResponse.json(
-        { error: data.error?.message || 'Erro de comunicação com a API Gemini.' },
+        { error: data.error?.message || 'Erro ao comunicar com a API do Gemini.' },
         { status: response.status }
       );
     }
 
-    // Extrai o texto da resposta
     const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    // Trata o JSON para garantir que nenhum caractere extra quebre o Parse
     const jsonInicio = textResult.indexOf('[');
     const jsonFim = textResult.lastIndexOf(']') + 1;
 
     if (jsonInicio === -1 || jsonFim === 0) {
       return NextResponse.json(
-        { error: 'Nenhum produto foi identificado na imagem informada.' },
+        { error: 'Nenhum produto foi identificado na imagem.' },
         { status: 422 }
       );
     }
@@ -90,9 +89,9 @@ export async function POST(req: Request) {
       ofertas,
     });
   } catch (error: any) {
-    console.error('Erro na API scan-folheto:', error);
+    console.error('Erro na rota scan-folheto:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro interno ao processar a requisição.' },
+      { error: error.message || 'Erro interno ao processar a imagem.' },
       { status: 500 }
     );
   }

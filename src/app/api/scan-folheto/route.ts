@@ -6,7 +6,6 @@ export async function POST(req: Request) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error('ERRO: GEMINI_API_KEY não configurada.');
       return NextResponse.json(
         { error: 'Chave da API do Gemini não configurada no servidor.' },
         { status: 500 }
@@ -22,12 +21,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // Remove o cabeçalho base64 data URL
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    // Atualizado para o alias compatível
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
     const prompt = `
       Você é um leitor de folhetos de oferta. 
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 
       Regras estritas:
       - Converta o preço para número float (ex: R$ 8,49 vira 8.49).
-      - Não adicione textos explicativos, markdown, nem blocos de código estilo \`\`\`json.
+      - Não adicione textos explicativos nem blocos de código Markdown.
       - Retorne apenas o JSON puro.
     `;
 
@@ -56,7 +56,6 @@ export async function POST(req: Request) {
 
     const responseText = result.response.text().trim();
 
-    // Tratamento reforçado para extrair apenas o array JSON
     const jsonInicio = responseText.indexOf('[');
     const jsonFim = responseText.lastIndexOf(']') + 1;
 

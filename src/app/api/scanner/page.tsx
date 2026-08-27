@@ -253,7 +253,7 @@ export default function LeitorFolhetoPage() {
           <span>📷</span> Comparar
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>📜</span> Histórico
+          <span>📜</span> Histórico 2
         </Link>
       </nav>
     </div>

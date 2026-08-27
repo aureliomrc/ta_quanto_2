@@ -1,134 +1,83 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
-// Inicializa a SDK oficial do Gemini (certifique-se de ter GEMINI_API_KEY no seu .env)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: Request) {
   try {
-    const { imagemBase64 } = await req.json();
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      console.error('ERRO: GEMINI_API_KEY não configurada.');
+      return NextResponse.json(
+        { error: 'Chave da API do Gemini não configurada no servidor.' },
+        { status: 500 }
+      );
+    }
+
+    const { imagemBase64, mercado, regiao } = await req.json();
 
     if (!imagemBase64) {
       return NextResponse.json(
-        { error: 'Nenhuma imagem foi fornecida.' },
+        { error: 'A imagem é obrigatória.' },
         { status: 400 }
       );
     }
 
-    // Extrai o tipo mime (png, jpeg, webp) e o buffer da string base64
-    const matches = imagemBase64.match(/^data:(image\/\w+);base64,(.+)$/);
-    if (!matches) {
-      return NextResponse.json(
-        { error: 'Formato de imagem base64 inválido.' },
-        { status: 400 }
-      );
-    }
+    // Remove o cabeçalho base64 data URL
+    const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
+    const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    const mimeType = matches[1];
-    const base64Data = matches[2];
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    // Prompt adaptado para ler Folhetos, Etiquetas de Gôndola e Cartazes
     const prompt = `
-Você é um sistema especialista em visão computacional e leitura de preços de supermercados.
-Analise com atenção a imagem enviada. Ela pode ser:
-1. Um folheto, encarte ou panfleto promocional impresso.
-2. Uma foto de etiqueta de preço fixada na gôndola/prateleira do supermercado.
-3. Um cartaz, banner ou etiqueta de oferta pendurada na gôndola.
+      Você é um leitor de folhetos de oferta. 
+      Analise esta imagem e extraia todos os produtos com seus preços promocionais.
+      
+      Sua resposta deve ser EXCLUSIVAMENTE um JSON válido no seguinte formato:
+      [
+        {"produto": "Nome do Produto", "preco": 0.00}
+      ]
 
-Extraia as seguintes informações:
-- Nome do supermercado (se legível ou presente na etiqueta/folheto; se não encontrar, coloque "Supermercado Local").
-- Cidade/Região (se presente; se não encontrar, coloque "Não informada").
-- Lista de todos os produtos visíveis com seus respectivos preços.
+      Regras estritas:
+      - Converta o preço para número float (ex: R$ 8,49 vira 8.49).
+      - Não adicione textos explicativos, markdown, nem blocos de código estilo \`\`\`json.
+      - Retorne apenas o JSON puro.
+    `;
 
-Sua resposta DEVE SER EXCLUSIVAMENTE um objeto JSON válido no formato abaixo, sem markdown de bloco de código (\`\`\`json) e sem explicações antes ou depois:
-
-{
-  "mercado": "Nome do Mercado",
-  "regiao": "Região ou Cidade",
-  "ofertas": [
-    {
-      "produto": "Nome do Produto (com peso/unidade se houver)",
-      "preco": 10.90
-    }
-  ]
-}
-`;
-
-    // Chamada à API da IA Gemini 2.5 Flash
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data,
-              },
-            },
-          ],
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: mimeType,
         },
-      ],
-    });
+      },
+    ]);
 
-    const respostaTexto = response.text || '';
+    const responseText = result.response.text().trim();
 
-    // Limpa possíveis marcações markdown do retorno da IA para extrair apenas o JSON
-    const jsonLimpo = respostaTexto
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
+    // Tratamento reforçado para extrair apenas o array JSON
+    const jsonInicio = responseText.indexOf('[');
+    const jsonFim = responseText.lastIndexOf(']') + 1;
 
-    const dadosExtraidos = JSON.parse(jsonLimpo);
-
-    const mercado = dadosExtraidos.mercado || 'Supermercado Local';
-    const regiao = dadosExtraidos.regiao || 'Não informada';
-    const ofertasLidas = dadosExtraidos.ofertas || [];
-
-    if (ofertasLidas.length === 0) {
-      return NextResponse.json(
-        { error: 'Não foi possível identificar preços ou produtos na imagem enviada.' },
-        { status: 422 }
-      );
+    if (jsonInicio === -1 || jsonFim === 0) {
+      throw new Error('Nenhum dado válido de oferta retornado pela IA.');
     }
 
-    // Grava as ofertas lidas no banco de dados via Prisma
-    const ofertasSalvas = [];
-    for (const item of ofertasLidas) {
-      const precoNumerico = typeof item.preco === 'number' 
-        ? item.preco 
-        : parseFloat(String(item.preco).replace(',', '.'));
-
-      if (item.produto && !isNaN(precoNumerico)) {
-        const novaOferta = await prisma.oferta.create({
-          data: {
-            produto: item.produto,
-            preco: precoNumerico,
-            mercado: mercado,
-            regiao: regiao,
-          },
-        });
-        ofertasSalvas.push(novaOferta);
-      }
-    }
+    const jsonString = responseText.substring(jsonInicio, jsonFim);
+    const ofertas = JSON.parse(jsonString);
 
     return NextResponse.json({
       success: true,
-      mercado,
-      regiao,
-      totalProcessados: ofertasSalvas.length,
-      ofertas: ofertasSalvas,
+      mercado: mercado || 'Geral',
+      regiao: regiao || 'SUDESTE',
+      totalProcessados: ofertas.length,
+      ofertas,
     });
-
   } catch (error: any) {
-    console.error('Erro ao processar imagem:', error);
+    console.error('Erro no processamento do scanner:', error);
     return NextResponse.json(
-      { error: 'Erro interno ao processar a imagem do scanner.', detalhe: error.message },
+      { error: error.message || 'Erro interno ao processar a imagem do scanner.' },
       { status: 500 }
     );
   }

@@ -12,7 +12,7 @@ export default function LeitorFolhetoPage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Lê a foto tirada pelo aplicativo de câmera do celular e converte em imagem
+  // Captura a foto assim que o aplicativo de câmera do celular tira e fecha
   const handleCapturaFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -101,7 +101,7 @@ export default function LeitorFolhetoPage() {
           </div>
         </div>
 
-        {/* INPUT DE FOTO NATI️VO DO SISTEMA */}
+        {/* INPUT DE FOTO NATIVO QUE NÃO TRAVA A CÂMERA */}
         <input
           type="file"
           accept="image/*"
@@ -122,12 +122,14 @@ export default function LeitorFolhetoPage() {
               />
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => setImagemBase64(null)}
                   className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-xs"
                 >
                   Refazer Foto
                 </button>
                 <button
+                  type="button"
                   onClick={handleEnviar}
                   disabled={carregando}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs disabled:opacity-50"
@@ -142,7 +144,7 @@ export default function LeitorFolhetoPage() {
               onClick={() => inputRef.current?.click()}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-8 rounded-2xl text-sm shadow-xl active:scale-95 transition-all"
             >
-              📷 Abrir Câmera do Celular
+              📷 Tirar Foto (Câmera)
             </button>
           )}
         </div>

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: Request) {
   try {
@@ -7,7 +6,7 @@ export async function POST(req: Request) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Chave da API do Gemini não configurada no servidor.' },
+        { error: 'Chave GEMINI_API_KEY não configurada no ambiente.' },
         { status: 500 }
       );
     }
@@ -21,51 +20,66 @@ export async function POST(req: Request) {
       );
     }
 
+    // Trata e limpa o cabeçalho do Base64
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Força a utilização da API v1 estável no SDK
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel(
-      { model: 'gemini-1.5-flash' },
-      { apiVersion: 'v1' }
+    // Requisição REST direta enviando a chave no formato do Google Cloud / AI Studio Enterprise
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Você é um leitor especialista em folhetos de supermercado. 
+                  Analise a imagem e extraia todas as ofertas e preços.
+                  Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
+                  [{"produto": "Nome do produto completo", "preco": 0.00}]`,
+                },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      }
     );
 
-    const prompt = `
-      Você é um leitor de folhetos de oferta. 
-      Analise esta imagem e extraia todos os produtos com seus preços promocionais.
-      
-      Sua resposta deve ser EXCLUSIVAMENTE um JSON válido no seguinte formato:
-      [
-        {"produto": "Nome do Produto", "preco": 0.00}
-      ]
+    const data = await response.json();
 
-      Regras estritas:
-      - Converta o preço para número float (ex: R$ 8,49 vira 8.49).
-      - Não adicione textos explicativos nem blocos de código Markdown.
-      - Retorne apenas o JSON puro.
-    `;
-
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType,
-        },
-      },
-    ]);
-
-    const responseText = result.response.text().trim();
-
-    const jsonInicio = responseText.indexOf('[');
-    const jsonFim = responseText.lastIndexOf(']') + 1;
-
-    if (jsonInicio === -1 || jsonFim === 0) {
-      throw new Error('Nenhum dado válido de oferta retornado pela IA.');
+    if (!response.ok) {
+      console.error('Erro retornado pela API Gemini:', data);
+      return NextResponse.json(
+        { error: data.error?.message || 'Erro de comunicação com a API Gemini.' },
+        { status: response.status }
+      );
     }
 
-    const jsonString = responseText.substring(jsonInicio, jsonFim);
+    // Extrai o texto da resposta
+    const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    // Trata o JSON para garantir que nenhum caractere extra quebre o Parse
+    const jsonInicio = textResult.indexOf('[');
+    const jsonFim = textResult.lastIndexOf(']') + 1;
+
+    if (jsonInicio === -1 || jsonFim === 0) {
+      return NextResponse.json(
+        { error: 'Nenhum produto foi identificado na imagem informada.' },
+        { status: 422 }
+      );
+    }
+
+    const jsonString = textResult.substring(jsonInicio, jsonFim);
     const ofertas = JSON.parse(jsonString);
 
     return NextResponse.json({
@@ -76,9 +90,9 @@ export async function POST(req: Request) {
       ofertas,
     });
   } catch (error: any) {
-    console.error('Erro no processamento do scanner:', error);
+    console.error('Erro na API scan-folheto:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro interno ao processar a imagem do scanner.' },
+      { error: error.message || 'Erro interno ao processar a requisição.' },
       { status: 500 }
     );
   }

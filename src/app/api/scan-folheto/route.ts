@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: Request) {
   try {
@@ -24,36 +24,25 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Instancia o cliente mantendo a tipagem aceita pelo SDK
-    const ai = new GoogleGenAI({
-      apiKey,
-      ...( { vertexAI: true, project: '24430748795', location: 'us-central1' } as any ),
-    });
+    // Inicializa a instância oficial com a chave de API de forma direta
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
     Analise a imagem e extraia todas as ofertas e preços.
     Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
     [{"produto": "Nome do produto completo", "preco": 0.00}]`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data,
-              },
-            },
-          ],
-        },
-      ],
-    });
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: mimeType,
+      },
+    };
 
-    const textResult = response.text || '';
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const textResult = response.text();
 
     const jsonInicio = textResult.indexOf('[');
     const jsonFim = textResult.lastIndexOf(']') + 1;

@@ -24,12 +24,10 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Força a versão da API v1 e seleciona o modelo gemini-2.0-flash
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel(
-      { model: 'gemini-2.0-flash' },
-      { apiVersion: 'v1' }
-    );
+    
+    // Atualizado para o alias estável mais recente
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
     Analise a imagem e extraia todas as ofertas e preços.

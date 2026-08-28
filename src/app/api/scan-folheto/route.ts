@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { VertexAI } from '@google-cloud/vertexai';
 
 export async function POST(req: Request) {
   try {
@@ -23,49 +24,41 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Requisição HTTP direta usando a versão v1beta e o cabeçalho x-goog-api-key
-    const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [
+    // Inicialização da instância Vertex AI com o ID do seu projeto
+    const vertexAI = new VertexAI({
+      project: '24430748795',
+      location: 'us-central1',
+    });
+
+    // Instancia o modelo gemini-1.5-flash na Vertex AI
+    const generativeModel = vertexAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+    });
+
+    const prompt = `Você é um leitor especialista em folhetos de supermercado. 
+    Analise a imagem e extraia todas as ofertas e preços.
+    Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
+    [{"produto": "Nome do produto completo", "preco": 0.00}]`;
+
+    const requestBody = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              parts: [
-                {
-                  text: `Você é um leitor especialista em folhetos de supermercado. 
-                  Analise a imagem e extraia todas as ofertas e preços.
-                  Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
-                  [{"produto": "Nome do produto completo", "preco": 0.00}]`,
-                },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
-                  },
-                },
-              ],
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data,
+              },
             },
           ],
-        }),
-      }
-    );
+        },
+      ],
+    };
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Erro retornado pela API do Gemini:', data);
-      return NextResponse.json(
-        { error: data.error?.message || 'Erro ao comunicar com a API do Gemini.' },
-        { status: response.status }
-      );
-    }
-
-    const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const resp = await generativeModel.generateContent(requestBody);
+    const textResult = resp.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     const jsonInicio = textResult.indexOf('[');
     const jsonFim = textResult.lastIndexOf(']') + 1;

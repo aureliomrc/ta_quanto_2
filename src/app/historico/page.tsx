@@ -3,26 +3,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Trophy, 
-  Store, 
   ShoppingCart, 
   TrendingDown, 
-  AlertCircle, 
   CheckCircle2, 
-  HelpCircle, 
   Calendar, 
-  ChevronRight,
   Sparkles,
   Info,
-  DollarSign,
   RefreshCw
 } from 'lucide-react';
 
-// Tipos de dados
 interface ItemEscaneado {
   id: string;
   nome: string;
   quantidade: number;
   categoria: string;
+  precoCapturado?: number;
 }
 
 interface ItemComPrecos extends ItemEscaneado {
@@ -45,53 +40,44 @@ interface HistoricoEscaneamento {
   id: string;
   data: string;
   nomeLista: string;
+  mercadoCapturado?: string;
   totalItens: number;
   itens: ItemEscaneado[];
 }
 
-// Dados padrão caso o usuário ainda não tenha escaneado nada
 const HISTORICO_DEFAULT: HistoricoEscaneamento[] = [
   {
     id: 'hist-1',
     data: '25/08/2026 - 14:30',
-    nomeLista: 'Compra Semanal de Supermercado',
-    totalItens: 6,
+    nomeLista: 'Compra Exemplo',
+    mercadoCapturado: 'Assaí',
+    totalItens: 3,
     itens: [
-      { id: '1', nome: 'Arroz Agulhinha Tipo 1 5kg', quantidade: 1, categoria: 'Mercearia' },
-      { id: '2', nome: 'Feijão Carioca 1kg', quantidade: 2, categoria: 'Mercearia' },
-      { id: '3', nome: 'Óleo de Soja 900ml', quantidade: 2, categoria: 'Mercearia' },
-      { id: '4', nome: 'Leite Integral 1L', quantidade: 6, categoria: 'Laticínios' },
-      { id: '5', nome: 'Café Torrado e Moído 500g', quantidade: 2, categoria: 'Mercearia' },
-      { id: '6', nome: 'Detergente Líquido 500ml', quantidade: 4, categoria: 'Limpeza' },
+      { id: '1', nome: 'Arroz Agulhinha 5kg', quantidade: 1, categoria: 'Mercearia', precoCapturado: 21.90 },
+      { id: '2', nome: 'Feijão Carioca 1kg', quantidade: 2, categoria: 'Mercearia', precoCapturado: 6.80 },
+      { id: '3', nome: 'Leite Integral 1L', quantidade: 6, categoria: 'Laticínios', precoCapturado: 4.29 },
     ]
   }
 ];
 
-const PRECOS_FOLHETOS: { [produtoNome: string]: { [mercado: string]: number } } = {
-  'Arroz Agulhinha Tipo 1 5kg': { 'Atacadão': 21.90, 'Assaí': 22.50, 'Carrefour': 25.90 },
-  'Feijão Carioca 1kg': { 'Atacadão': 6.80, 'Assaí': 6.90, 'Pão de Açúcar': 8.50 },
-  'Óleo de Soja 900ml': { 'Atacadão': 5.49, 'Carrefour': 5.99, 'Pão de Açúcar': 6.20 },
-  'Leite Integral 1L': { 'Assaí': 4.29, 'Carrefour': 4.59 },
-  'Café Torrado e Moído 500g': { 'Atacadão': 14.90, 'Assaí': 15.20, 'Carrefour': 16.80 },
+const PRECOS_MOCK: { [produtoNome: string]: { [mercado: string]: number } } = {
+  'Arroz Agulhinha 5kg': { 'Atacadão': 22.50, 'Carrefour': 25.90 },
+  'Feijão Carioca 1kg': { 'Atacadão': 6.90, 'Carrefour': 8.50 },
+  'Leite Integral 1L': { 'Carrefour': 4.59 },
 };
 
 const MEDIAS_SEFAZ: { [produtoNome: string]: number } = {
-  'Arroz Agulhinha Tipo 1 5kg': 23.80,
+  'Arroz Agulhinha 5kg': 23.80,
   'Feijão Carioca 1kg': 7.40,
-  'Óleo de Soja 900ml': 5.85,
   'Leite Integral 1L': 4.60,
-  'Café Torrado e Moído 500g': 15.90,
-  'Detergente Líquido 500ml': 2.45,
 };
 
-const MERCADOS_DISPONIVEIS = ['Atacadão', 'Assaí', 'Carrefour', 'Pão de Açúcar'];
+const MERCADOS_DISPONIVEIS = ['Assaí', 'Atacadão', 'Carrefour', 'Pão de Açúcar'];
 
 export default function HistoricoComparativoPage() {
   const [historico, setHistorico] = useState<HistoricoEscaneamento[]>(HISTORICO_DEFAULT);
   const [listaSelecionadaId, setListaSelecionadaId] = useState<string>('');
-  const [filtroOrigem, setFiltroOrigem] = useState<'todos' | 'folheto' | 'sefaz'>('todos');
 
-  // Carrega o histórico do localStorage ao montar o componente
   const carregarHistorico = () => {
     if (typeof window !== 'undefined') {
       const salvo = localStorage.getItem('historico_escaneamentos');
@@ -123,14 +109,21 @@ export default function HistoricoComparativoPage() {
     const processados: ItemComPrecos[] = listaAtual.itens.map(item => {
       const precosMercados: { [key: string]: number } = {};
       const usouSefaz: { [key: string]: boolean } = {};
-      const precoMedioSefaz = MEDIAS_SEFAZ[item.nome] || 10.00;
+      const precoMedioSefaz = MEDIAS_SEFAZ[item.nome] || item.precoCapturado || 10.00;
 
       MERCADOS_DISPONIVEIS.forEach(mercado => {
-        const precoFolheto = PRECOS_FOLHETOS[item.nome]?.[mercado];
-        if (precoFolheto !== undefined) {
-          precosMercados[mercado] = precoFolheto;
+        // Se o produto foi escaneado e o mercado combina, usa o preço real capturado
+        if (listaAtual.mercadoCapturado?.toLowerCase() === mercado.toLowerCase() && (item.precoCapturado ?? 0) > 0) {
+          precosMercados[mercado] = item.precoCapturado!;
           usouSefaz[mercado] = false;
-        } else {
+        } 
+        // Senão, checa o catálogo estático
+        else if (PRECOS_MOCK[item.nome]?.[mercado] !== undefined) {
+          precosMercados[mercado] = PRECOS_MOCK[item.nome][mercado];
+          usouSefaz[mercado] = false;
+        } 
+        // Fallback: Média SEFAZ
+        else {
           precosMercados[mercado] = precoMedioSefaz;
           usouSefaz[mercado] = true;
         }
@@ -198,23 +191,21 @@ export default function HistoricoComparativoPage() {
   const economiaMaxima = mercadoMaisCaro.totalLista - mercadoCampeao.totalLista;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800 pb-20">
       <div className="max-w-6xl mx-auto space-y-8">
         
-        {/* Cabeçalho da Página */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
             <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
               <ShoppingCart className="w-8 h-8 text-indigo-600" />
-              Histórico & Comparativo de Mercados
+              Histórico & Comparativo de Ofertas
             </h1>
             <p className="text-slate-500 mt-1">
-              Análise inteligente de preços com base nos seus itens escaneados, folhetos e banco de dados da SEFAZ.
+              Compara preços do folheto capturado com médias da SEFAZ e concorrentes.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Botão de Atualizar dados */}
             <button
               onClick={carregarHistorico}
               title="Atualizar histórico"
@@ -223,7 +214,6 @@ export default function HistoricoComparativoPage() {
               <RefreshCw className="w-5 h-5" />
             </button>
 
-            {/* Seletor de Listas do Histórico */}
             <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
               <Calendar className="w-5 h-5 text-indigo-500 ml-2" />
               <select
@@ -241,7 +231,6 @@ export default function HistoricoComparativoPage() {
           </div>
         </div>
 
-        {/* Banner do Campeão de Economia */}
         <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
           <div className="absolute -right-6 -bottom-6 opacity-15 pointer-events-none">
             <Trophy className="w-64 h-64" />
@@ -257,35 +246,32 @@ export default function HistoricoComparativoPage() {
                 {mercadoCampeao.nome} é o lugar mais barato!
               </h2>
               <p className="text-emerald-100 text-sm md:text-base max-w-xl">
-                Comprando toda a sua lista neste estabelecimento, você economiza até{' '}
+                Economia estimada de até{' '}
                 <strong className="text-white underline decoration-emerald-300">
                   R$ {economiaMaxima.toFixed(2)}
                 </strong>{' '}
-                em comparação ao mercado mais caro.
+                em comparação aos concorrentes.
               </p>
             </div>
 
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 text-center space-y-1">
-              <span className="text-xs uppercase tracking-wider text-emerald-200">Total da Lista</span>
+              <span className="text-xs uppercase tracking-wider text-emerald-200">Total Calculado</span>
               <div className="text-3xl font-black text-white">
                 R$ {mercadoCampeao.totalLista.toFixed(2)}
               </div>
               <div className="text-xs text-emerald-200 flex items-center justify-center gap-1 mt-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                {mercadoCampeao.qtdFolheto} em oferta no encarte
+                {mercadoCampeao.qtdFolheto} item(ns) capturados
               </div>
             </div>
           </div>
         </div>
 
-        {/* Ranking de Mercados */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-amber-500" />
-              Ranking de Mercados para esta Lista
-            </h2>
-          </div>
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            Ranking por Mercado
+          </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {rankingMercados.map((m) => {
@@ -296,54 +282,38 @@ export default function HistoricoComparativoPage() {
                   className={`bg-white rounded-xl p-5 border transition-all duration-200 relative flex flex-col justify-between ${
                     isPrimeiro
                       ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
-                      : 'border-slate-200 hover:border-slate-300 shadow-sm'
+                      : 'border-slate-200 shadow-sm'
                   }`}
                 >
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                    <span
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                        isPrimeiro
-                          ? 'bg-amber-400 text-slate-900'
-                          : m.posicao === 2
-                          ? 'bg-slate-300 text-slate-800'
-                          : m.posicao === 3
-                          ? 'bg-amber-700/20 text-amber-900'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      #{m.posicao}
-                    </span>
                     <span className="font-bold text-slate-800">{m.nome}</span>
+                    <span className="text-xs text-slate-400 font-bold">#{m.posicao}</span>
                   </div>
 
                   <div className="space-y-1 mb-4">
-                    <div className="text-xs text-slate-400 font-medium">Total Estimado</div>
+                    <div className="text-xs text-slate-400 font-medium">Total Lista</div>
                     <div className="text-2xl font-black text-slate-900">
                       R$ {m.totalLista.toFixed(2)}
                     </div>
                     {m.diferencaParaMelhor > 0 ? (
-                      <div className="text-xs text-rose-500 font-semibold flex items-center gap-1">
-                        + R$ {m.diferencaParaMelhor.toFixed(2)} mais caro
+                      <div className="text-xs text-rose-500 font-semibold">
+                        + R$ {m.diferencaParaMelhor.toFixed(2)}
                       </div>
                     ) : (
                       <div className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                        <TrendingDown className="w-3.5 h-3.5" /> Menor valor
+                        <TrendingDown className="w-3.5 h-3.5" /> Menor preço
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-2 pt-3 border-t border-slate-100 text-xs">
                     <div className="flex items-center justify-between text-slate-600">
-                      <span className="flex items-center gap-1 text-indigo-600 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Preços do Folheto:
-                      </span>
-                      <strong className="text-slate-800">{m.qtdFolheto} itens</strong>
+                      <span className="text-indigo-600 font-medium">Preços de Oferta:</span>
+                      <strong>{m.qtdFolheto}</strong>
                     </div>
                     <div className="flex items-center justify-between text-slate-600">
-                      <span className="flex items-center gap-1 text-amber-600 font-medium">
-                        <Info className="w-3.5 h-3.5" /> Média SEFAZ:
-                      </span>
-                      <strong className="text-slate-800">{m.qtdSefaz} itens</strong>
+                      <span className="text-amber-600 font-medium">Média SEFAZ:</span>
+                      <strong>{m.qtdSefaz}</strong>
                     </div>
                   </div>
                 </div>
@@ -352,82 +322,68 @@ export default function HistoricoComparativoPage() {
           </div>
         </div>
 
-        {/* Tabela Detalhada de Comparação de Itens */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden space-y-4 p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">
-                Detalhamento Item por Item
-              </h3>
-            </div>
-          </div>
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">
+            Comparativo Detalhado de Itens
+          </h3>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 uppercase">
                   <th className="py-3 px-4">Produto</th>
                   <th className="py-3 px-4 text-center">Qtd</th>
                   <th className="py-3 px-4 text-center">Média SEFAZ</th>
                   {MERCADOS_DISPONIVEIS.map(mercado => (
-                    <th key={mercado} className="py-3 px-4 text-right">
-                      {mercado}
-                    </th>
+                    <th key={mercado} className="py-3 px-4 text-right">{mercado}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {itensProcessados.map(item => {
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-semibold text-slate-800">
-                        <div>{item.nome}</div>
-                        <span className="text-[11px] font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-0.5">
-                          {item.categoria}
-                        </span>
-                      </td>
+                {itensProcessados.map(item => (
+                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3.5 px-4 font-semibold text-slate-800">
+                      {item.nome}
+                    </td>
 
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-600">
-                        {item.quantidade}x
-                      </td>
+                    <td className="py-3.5 px-4 text-center font-bold text-slate-600">
+                      {item.quantidade}x
+                    </td>
 
-                      <td className="py-3.5 px-4 text-center text-slate-500 text-xs font-mono">
-                        R$ {item.precoMedioSefaz.toFixed(2)}
-                      </td>
+                    <td className="py-3.5 px-4 text-center text-slate-500 text-xs font-mono">
+                      R$ {item.precoMedioSefaz.toFixed(2)}
+                    </td>
 
-                      {MERCADOS_DISPONIVEIS.map(mercado => {
-                        const precoUnitario = item.precosMercados[mercado];
-                        const foiSefaz = item.usouSefaz[mercado];
-                        const totalItem = precoUnitario * item.quantidade;
-                        const menorPrecoItem = Math.min(...Object.values(item.precosMercados));
-                        const isMenorPreco = precoUnitario === menorPrecoItem;
+                    {MERCADOS_DISPONIVEIS.map(mercado => {
+                      const precoUnitario = item.precosMercados[mercado];
+                      const foiSefaz = item.usouSefaz[mercado];
+                      const totalItem = precoUnitario * item.quantidade;
 
-                        return (
-                          <td key={mercado} className="py-3.5 px-4 text-right">
-                            <div className="flex flex-col items-end">
-                              <span className={`font-bold font-mono ${isMenorPreco ? 'text-emerald-600' : 'text-slate-700'}`}>
-                                R$ {totalItem.toFixed(2)}
+                      return (
+                        <td key={mercado} className="py-3.5 px-4 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold font-mono text-slate-800">
+                              R$ {totalItem.toFixed(2)}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              ({item.quantidade}x R$ {precoUnitario.toFixed(2)})
+                            </span>
+
+                            {foiSefaz ? (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded mt-1">
+                                <Info className="w-2.5 h-2.5" /> SEFAZ
                               </span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                ({item.quantidade}x R$ {precoUnitario.toFixed(2)})
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded mt-1">
+                                <CheckCircle2 className="w-2.5 h-2.5" /> Folheto
                               </span>
-
-                              {foiSefaz ? (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded mt-1">
-                                  <Info className="w-2.5 h-2.5" /> SEFAZ
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-100/80 px-1.5 py-0.5 rounded mt-1">
-                                  <CheckCircle2 className="w-2.5 h-2.5" /> Folheto
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -16,7 +16,7 @@ export default function LeitorFolhetoPage() {
   const inputArquivoRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Desliga o hardware da câmera imediatamente
+  // Desliga o hardware da câmera
   const desligarCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -29,7 +29,7 @@ export default function LeitorFolhetoPage() {
     return () => desligarCamera();
   }, []);
 
-  // Tenta ligar a webcam (ideal para Desktop)
+  // Inicia webcam no Desktop
   const iniciarWebcam = async () => {
     try {
       setMensagem('');
@@ -39,7 +39,6 @@ export default function LeitorFolhetoPage() {
       streamRef.current = stream;
       setStreamAtivo(true);
 
-      // Aguarda a renderização do elemento video no React
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -47,12 +46,12 @@ export default function LeitorFolhetoPage() {
         }
       }, 100);
     } catch (err) {
-      console.log('Navegador bloqueou stream de vídeo ou está no celular. Redirecionando para arquivo.');
+      console.log('Ambiente mobile ou câmera bloqueada. Abrindo galeria.');
       inputArquivoRef.current?.click();
     }
   };
 
-  // Tira foto do feed do vídeo (<canvas>)
+  // Captura frame do vídeo
   const capturarFotoVideo = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -69,7 +68,7 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Lê arquivo ou foto tirada pelo celular
+  // Upload manual
   const handleUploadArquivo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -82,7 +81,7 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Função auxiliar para gravar os dados escaneados no LocalStorage
+  // Salva no localStorage preservando o preço real escaneado
   const salvarNoHistoricoLocal = (ofertas: any[]) => {
     try {
       const historicoAnterior = JSON.parse(
@@ -92,11 +91,13 @@ export default function LeitorFolhetoPage() {
       const novaEntrada = {
         id: `hist-${Date.now()}`,
         data: `${new Date().toLocaleDateString('pt-BR')} - ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-        nomeLista: `Ofertas ${mercado} (${regiao})`,
+        nomeLista: `Folheto ${mercado} (${regiao})`,
+        mercadoCapturado: mercado,
         totalItens: ofertas.length,
         itens: ofertas.map((item: any, index: number) => ({
           id: `${Date.now()}-${index}`,
           nome: item.produto || item.nome || 'Produto Sem Nome',
+          precoCapturado: Number(item.preco || item.precoOferta || item.valor || 0),
           quantidade: item.quantidade || 1,
           categoria: item.categoria || 'Geral'
         }))
@@ -109,11 +110,11 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Envia a imagem extraída para a API Gemini
+  // Envia a imagem para a API Gemini
   const handleEnviar = async () => {
     if (!imagemBase64) return;
     setCarregando(true);
-    setMensagem('Analisando imagem com a IA...');
+    setMensagem('Analisando ofertas com a IA...');
 
     try {
       const res = await fetch('/api/scan-folheto', {
@@ -126,8 +127,6 @@ export default function LeitorFolhetoPage() {
 
       if (res.ok) {
         const ofertasCapturadas = data.ofertas || data.itens || [];
-        
-        // Salva as ofertas retornadas localmente para leitura do histórico
         salvarNoHistoricoLocal(ofertasCapturadas);
 
         setMensagem(`✅ Sucesso! ${data.totalProcessados || ofertasCapturadas.length || 0} oferta(s) salva(s).`);
@@ -145,7 +144,6 @@ export default function LeitorFolhetoPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* Cabeçalho */}
         <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
           <span className="text-2xl">📷</span>
           <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
@@ -153,7 +151,6 @@ export default function LeitorFolhetoPage() {
           </h1>
         </header>
 
-        {/* Inputs de Mercado */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Mercado</label>
@@ -161,7 +158,7 @@ export default function LeitorFolhetoPage() {
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value)}
-              placeholder="Ex: Supermercado Carrefour, Extra..."
+              placeholder="Ex: Assaí, Carrefour, Atacadão..."
               className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -182,7 +179,6 @@ export default function LeitorFolhetoPage() {
           </div>
         </div>
 
-        {/* Elemento oculto para upload no celular */}
         <input
           type="file"
           accept="image/*"
@@ -193,7 +189,6 @@ export default function LeitorFolhetoPage() {
 
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Área Central de Captura */}
         <div className="bg-black rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800 relative overflow-hidden">
           {imagemBase64 ? (
             <div className="w-full space-y-3 text-center">
@@ -275,7 +270,6 @@ export default function LeitorFolhetoPage() {
         )}
       </div>
 
-      {/* Navegação Inferior */}
       <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
         <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📋</span> Listas

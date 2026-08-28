@@ -24,16 +24,21 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    const ai = new GoogleGenAI({ apiKey });
+    // Configura o cliente para rodar no endpoint da Vertex AI
+    const ai = new GoogleGenAI({
+      apiKey,
+      vertexAI: true,
+      project: '24430748795',
+      location: 'us-central1',
+    });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
     Analise a imagem e extraia todas as ofertas e preços.
     Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
     [{"produto": "Nome do produto completo", "preco": 0.00}]`;
 
-    // Utiliza a versão explícita do modelo aceita pelo projeto no Google Cloud
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash-001',
+      model: 'gemini-1.5-flash',
       contents: [
         {
           role: 'user',

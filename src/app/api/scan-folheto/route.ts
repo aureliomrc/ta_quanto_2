@@ -24,7 +24,6 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Inicializa a instância passando a chave explicitamente
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
@@ -32,8 +31,9 @@ export async function POST(req: Request) {
     Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
     [{"produto": "Nome do produto completo", "preco": 0.00}]`;
 
+    // Utiliza a versão explícita do modelo aceita pelo projeto no Google Cloud
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-flash-001',
       contents: [
         {
           role: 'user',

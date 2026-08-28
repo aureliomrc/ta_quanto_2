@@ -24,12 +24,10 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Configura o cliente para rodar no endpoint da Vertex AI
+    // Instancia o cliente mantendo a tipagem aceita pelo SDK
     const ai = new GoogleGenAI({
       apiKey,
-      vertexAI: true,
-      project: '24430748795',
-      location: 'us-central1',
+      ...( { vertexAI: true, project: '24430748795', location: 'us-central1' } as any ),
     });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 

@@ -16,7 +16,6 @@ export default function LeitorFolhetoPage() {
   const inputArquivoRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Desliga o hardware da câmera
   const desligarCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -29,7 +28,6 @@ export default function LeitorFolhetoPage() {
     return () => desligarCamera();
   }, []);
 
-  // Inicia webcam no Desktop
   const iniciarWebcam = async () => {
     try {
       setMensagem('');
@@ -45,13 +43,11 @@ export default function LeitorFolhetoPage() {
           videoRef.current.play();
         }
       }, 100);
-    } catch (err) {
-      console.log('Ambiente mobile ou câmera bloqueada. Abrindo galeria.');
+    } catch {
       inputArquivoRef.current?.click();
     }
   };
 
-  // Captura frame do vídeo
   const capturarFotoVideo = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -68,7 +64,6 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Upload manual
   const handleUploadArquivo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -81,60 +76,37 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Salva no localStorage preservando o preço real escaneado
-  const salvarNoHistoricoLocal = (ofertas: any[]) => {
-    try {
-      const historicoAnterior = JSON.parse(
-        localStorage.getItem('historico_escaneamentos') || '[]'
-      );
-
-      const novaEntrada = {
-        id: `hist-${Date.now()}`,
-        data: `${new Date().toLocaleDateString('pt-BR')} - ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-        nomeLista: `Folheto ${mercado} (${regiao})`,
-        mercadoCapturado: mercado,
-        totalItens: ofertas.length,
-        itens: ofertas.map((item: any, index: number) => ({
-          id: `${Date.now()}-${index}`,
-          nome: item.produto || item.nome || 'Produto Sem Nome',
-          precoCapturado: Number(item.preco || item.precoOferta || item.valor || 0),
-          quantidade: item.quantidade || 1,
-          categoria: item.categoria || 'Geral'
-        }))
-      };
-
-      const historicoAtualizado = [novaEntrada, ...historicoAnterior];
-      localStorage.setItem('historico_escaneamentos', JSON.stringify(historicoAtualizado));
-    } catch (e) {
-      console.error('Erro ao salvar escaneamento no LocalStorage:', e);
-    }
-  };
-
-  // Envia a imagem para a API Gemini
   const handleEnviar = async () => {
     if (!imagemBase64) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMensagem('❌ Você precisa estar logado para realizar a leitura.');
+      return;
+    }
+
     setCarregando(true);
-    setMensagem('Analisando ofertas com a IA...');
+    setMensagem('Analisando ofertas com a IA e salvando no banco Neon...');
 
     try {
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ imagemBase64, mercado, regiao }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        const ofertasCapturadas = data.ofertas || data.itens || [];
-        salvarNoHistoricoLocal(ofertasCapturadas);
-
-        setMensagem(`✅ Sucesso! ${data.totalProcessados || ofertasCapturadas.length || 0} oferta(s) salva(s).`);
+        setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
         setImagemBase64(null);
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
-    } catch (err) {
+    } catch {
       setMensagem('❌ Erro de conexão com o servidor.');
     } finally {
       setCarregando(false);

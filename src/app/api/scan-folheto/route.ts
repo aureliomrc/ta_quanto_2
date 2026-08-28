@@ -1,75 +1,93 @@
 import { NextResponse } from 'next/server';
+import { neon } from '@neondatabase/serverless';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import jwt from 'jsonwebtoken';
+
+const sql = neon(process.env.DATABASE_URL!);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    // 1. Validação do Token JWT no Header
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.split(' ')[1];
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Chave GEMINI_API_KEY não configurada no ambiente.' },
-        { status: 500 }
-      );
+    if (!token) {
+      return NextResponse.json({ error: 'Token de autenticação não fornecido.' }, { status: 401 });
+    }
+
+    let userId = '';
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
+      userId = decoded.id;
+    } catch {
+      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
     }
 
     const { imagemBase64, mercado, regiao } = await req.json();
 
     if (!imagemBase64) {
-      return NextResponse.json(
-        { error: 'A imagem é obrigatória.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Imagem não informada.' }, { status: 400 });
     }
 
-    const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
-    const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
+    // 2. Extração de ofertas com IA Gemini
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Atualizado para o modelo exigido pela API
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    const prompt = `Analise este folheto de ofertas do mercado ${mercado} (${regiao}).
+Extraia todos os produtos com seus respectivos preços visíveis.
+Retorne APENAS um array JSON válido sem marcações markdown extra no formato:
+[
+  { "produto": "Nome do Produto", "preco": 10.90, "quantidade": 1, "categoria": "Mercearia" }
+]`;
 
-    const prompt = `Você é um leitor especialista em folhetos de supermercado. 
-    Analise a imagem e extraia todas as ofertas e preços.
-    Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
-    [{"produto": "Nome do produto completo", "preco": 0.00}]`;
-
-    const imagePart = {
-      inlineData: {
-        data: base64Data,
-        mimeType: mimeType,
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: base64Clean,
+          mimeType: 'image/jpeg',
+        },
       },
-    };
+    ]);
 
-    const result = await model.generateContent([prompt, imagePart]);
-    const response = await result.response;
-    const textResult = response.text();
+    const responseText = result.response.text();
+    const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const ofertas = JSON.parse(cleanedJson);
 
-    const jsonInicio = textResult.indexOf('[');
-    const jsonFim = textResult.lastIndexOf(']') + 1;
-
-    if (jsonInicio === -1 || jsonFim === 0) {
-      return NextResponse.json(
-        { error: 'Nenhum produto foi identificado na imagem.' },
-        { status: 422 }
-      );
+    if (!Array.isArray(ofertas) || ofertas.length === 0) {
+      return NextResponse.json({ error: 'Nenhuma oferta identificada na imagem.' }, { status: 422 });
     }
 
-    const jsonString = textResult.substring(jsonInicio, jsonFim);
-    const ofertas = JSON.parse(jsonString);
+    // 3. Salvar Histórico no Banco Neon
+    const nomeLista = `Folheto ${mercado} (${regiao})`;
+    const [historicoCriado] = await sql`
+      INSERT INTO historico_escaneamentos (user_id, nome_lista, mercado, regiao)
+      VALUES (${userId}, ${nomeLista}, ${mercado}, ${regiao})
+      RETURNING id;
+    `;
+
+    // 4. Salvar Itens
+    for (const item of ofertas) {
+      await sql`
+        INSERT INTO historico_itens (historico_id, nome, preco_capturado, quantidade, categoria)
+        VALUES (
+          ${historicoCriado.id},
+          ${item.produto || item.nome || 'Produto Sem Nome'},
+          ${Number(item.preco || item.precoOferta || 0)},
+          ${item.quantidade || 1},
+          ${item.categoria || 'Geral'}
+        )
+      `;
+    }
 
     return NextResponse.json({
       success: true,
-      mercado: mercado || 'Geral',
-      regiao: regiao || 'SUDESTE',
+      historicoId: historicoCriado.id,
       totalProcessados: ofertas.length,
-      ofertas,
     });
   } catch (error: any) {
-    console.error('Erro na rota scan-folheto:', error);
-    return NextResponse.json(
-      { error: error.message || 'Erro interno ao processar a imagem.' },
-      { status: 500 }
-    );
+    console.error('Erro ao processar folheto:', error);
+    return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
   }
 }

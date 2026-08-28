@@ -1,93 +1,84 @@
 import { NextResponse } from 'next/server';
-import { neon } from '@neondatabase/serverless';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
 
-const sql = neon(process.env.DATABASE_URL!);
+// Inicialização da SDK do Google Generative AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    // 1. Validação do Token JWT no Header
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-
-    if (!token) {
-      return NextResponse.json({ error: 'Token de autenticação não fornecido.' }, { status: 401 });
+    // 1. Verificação / Autenticação de Token (Opcional)
+    const authHeader = request.headers.get('authorization');
+    if (authHeader) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        try {
+          jwt.verify(token, process.env.JWT_SECRET || 'secret');
+        } catch (err) {
+          return NextResponse.json(
+            { error: 'Não autorizado. Token inválido.' },
+            { status: 401 }
+          );
+        }
+      }
     }
 
-    let userId = '';
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-      userId = decoded.id;
-    } catch {
-      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
+    // 2. Extração dos dados da requisição (espera FormData para envio de imagens)
+    const formData = await request.formData();
+    const file = formData.get('file') as File | null;
+
+    if (!file) {
+      return NextResponse.json(
+        { error: 'Nenhum arquivo enviado.' },
+        { status: 400 }
+      );
     }
 
-    const { imagemBase64, mercado, regiao } = await req.json();
+    // Converter o arquivo para Buffer/Base64 para o Gemini
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const base64Data = buffer.toString('base64');
 
-    if (!imagemBase64) {
-      return NextResponse.json({ error: 'Imagem não informada.' }, { status: 400 });
-    }
+    // 3. Instanciação do modelo configurado com gemini-3.6-flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-    // 2. Extração de ofertas com IA Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
+    // 4. Prompt para análise do folheto
+    const prompt = 'Analise a imagem deste folheto e liste os produtos encontrados com seus respectivos preços e descrições.';
 
-    const prompt = `Analise este folheto de ofertas do mercado ${mercado} (${regiao}).
-Extraia todos os produtos com seus respectivos preços visíveis.
-Retorne APENAS um array JSON válido sem marcações markdown extra no formato:
-[
-  { "produto": "Nome do Produto", "preco": 10.90, "quantidade": 1, "categoria": "Mercearia" }
-]`;
-
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Clean,
-          mimeType: 'image/jpeg',
-        },
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: file.type || 'image/jpeg',
       },
-    ]);
+    };
 
+    // Chamada à API da Google Generative AI
+    const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
-    const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const ofertas = JSON.parse(cleanedJson);
 
-    if (!Array.isArray(ofertas) || ofertas.length === 0) {
-      return NextResponse.json({ error: 'Nenhuma oferta identificada na imagem.' }, { status: 422 });
-    }
-
-    // 3. Salvar Histórico no Banco Neon
-    const nomeLista = `Folheto ${mercado} (${regiao})`;
-    const [historicoCriado] = await sql`
-      INSERT INTO historico_escaneamentos (user_id, nome_lista, mercado, regiao)
-      VALUES (${userId}, ${nomeLista}, ${mercado}, ${regiao})
-      RETURNING id;
-    `;
-
-    // 4. Salvar Itens
-    for (const item of ofertas) {
+    // 5. Integração com banco de dados Neon (exemplo de persistência do scan)
+    if (process.env.DATABASE_URL) {
+      const sql = neon(process.env.DATABASE_URL);
       await sql`
-        INSERT INTO historico_itens (historico_id, nome, preco_capturado, quantidade, categoria)
-        VALUES (
-          ${historicoCriado.id},
-          ${item.produto || item.nome || 'Produto Sem Nome'},
-          ${Number(item.preco || item.precoOferta || 0)},
-          ${item.quantidade || 1},
-          ${item.categoria || 'Geral'}
-        )
+        INSERT INTO scans (filename, result, created_at)
+        VALUES (${file.name}, ${responseText}, NOW())
       `;
     }
 
+    // 6. Retorno de sucesso
     return NextResponse.json({
       success: true,
-      historicoId: historicoCriado.id,
-      totalProcessados: ofertas.length,
+      data: responseText,
     });
+
   } catch (error: any) {
-    console.error('Erro ao processar folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
+    console.error('Erro no processamento do folheto:', error);
+    return NextResponse.json(
+      {
+        error: error.message || 'Erro interno ao processar folheto.',
+      },
+      { status: 500 }
+    );
   }
 }

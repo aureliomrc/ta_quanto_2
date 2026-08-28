@@ -26,8 +26,8 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // Atualizado para o alias estável mais recente
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    // Atualizado para o modelo exigido pela API
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
     Analise a imagem e extraia todas as ofertas e preços.

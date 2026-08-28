@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenAI } from '@google/genai';
 
 export async function POST(req: Request) {
   try {
@@ -24,23 +24,16 @@ export async function POST(req: Request) {
     const base64Data = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imagemBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Inicialização da instância Vertex AI com o ID do seu projeto
-    const vertexAI = new VertexAI({
-      project: '24430748795',
-      location: 'us-central1',
-    });
-
-    // Instancia o modelo gemini-1.5-flash na Vertex AI
-    const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-    });
+    // Inicializa a instância passando a chave explicitamente
+    const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `Você é um leitor especialista em folhetos de supermercado. 
     Analise a imagem e extraia todas as ofertas e preços.
     Retorne APENAS um array JSON puro e válido sem marcação Markdown ou bloco de código (\`\`\`json):
     [{"produto": "Nome do produto completo", "preco": 0.00}]`;
 
-    const requestBody = {
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
       contents: [
         {
           role: 'user',
@@ -55,10 +48,9 @@ export async function POST(req: Request) {
           ],
         },
       ],
-    };
+    });
 
-    const resp = await generativeModel.generateContent(requestBody);
-    const textResult = resp.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const textResult = response.text || '';
 
     const jsonInicio = textResult.indexOf('[');
     const jsonFim = textResult.lastIndexOf(']') + 1;

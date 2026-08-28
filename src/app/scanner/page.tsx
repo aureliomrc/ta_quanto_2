@@ -48,7 +48,6 @@ export default function LeitorFolhetoPage() {
       }, 100);
     } catch (err) {
       console.log('Navegador bloqueou stream de vídeo ou está no celular. Redirecionando para arquivo.');
-      // Se der erro ou estiver no mobile, abre o leitor nativo
       inputArquivoRef.current?.click();
     }
   };
@@ -83,6 +82,33 @@ export default function LeitorFolhetoPage() {
     }
   };
 
+  // Função auxiliar para gravar os dados escaneados no LocalStorage
+  const salvarNoHistoricoLocal = (ofertas: any[]) => {
+    try {
+      const historicoAnterior = JSON.parse(
+        localStorage.getItem('historico_escaneamentos') || '[]'
+      );
+
+      const novaEntrada = {
+        id: `hist-${Date.now()}`,
+        data: `${new Date().toLocaleDateString('pt-BR')} - ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+        nomeLista: `Ofertas ${mercado} (${regiao})`,
+        totalItens: ofertas.length,
+        itens: ofertas.map((item: any, index: number) => ({
+          id: `${Date.now()}-${index}`,
+          nome: item.produto || item.nome || 'Produto Sem Nome',
+          quantidade: item.quantidade || 1,
+          categoria: item.categoria || 'Geral'
+        }))
+      };
+
+      const historicoAtualizado = [novaEntrada, ...historicoAnterior];
+      localStorage.setItem('historico_escaneamentos', JSON.stringify(historicoAtualizado));
+    } catch (e) {
+      console.error('Erro ao salvar escaneamento no LocalStorage:', e);
+    }
+  };
+
   // Envia a imagem extraída para a API Gemini
   const handleEnviar = async () => {
     if (!imagemBase64) return;
@@ -99,7 +125,12 @@ export default function LeitorFolhetoPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s).`);
+        const ofertasCapturadas = data.ofertas || data.itens || [];
+        
+        // Salva as ofertas retornadas localmente para leitura do histórico
+        salvarNoHistoricoLocal(ofertasCapturadas);
+
+        setMensagem(`✅ Sucesso! ${data.totalProcessados || ofertasCapturadas.length || 0} oferta(s) salva(s).`);
         setImagemBase64(null);
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Trophy, 
   Store, 
@@ -13,7 +13,8 @@ import {
   ChevronRight,
   Sparkles,
   Info,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from 'lucide-react';
 
 // Tipos de dados
@@ -22,12 +23,6 @@ interface ItemEscaneado {
   nome: string;
   quantidade: number;
   categoria: string;
-}
-
-interface PrecoMercado {
-  mercadoNome: string;
-  preco: number | null; // null se não estiver no folheto
-  emPromocao?: boolean;
 }
 
 interface ItemComPrecos extends ItemEscaneado {
@@ -54,8 +49,8 @@ interface HistoricoEscaneamento {
   itens: ItemEscaneado[];
 }
 
-// Dados simulados de histórico de escaneamentos
-const HISTORICO_MOCK: HistoricoEscaneamento[] = [
+// Dados padrão caso o usuário ainda não tenha escaneado nada
+const HISTORICO_DEFAULT: HistoricoEscaneamento[] = [
   {
     id: 'hist-1',
     data: '25/08/2026 - 14:30',
@@ -69,32 +64,17 @@ const HISTORICO_MOCK: HistoricoEscaneamento[] = [
       { id: '5', nome: 'Café Torrado e Moído 500g', quantidade: 2, categoria: 'Mercearia' },
       { id: '6', nome: 'Detergente Líquido 500ml', quantidade: 4, categoria: 'Limpeza' },
     ]
-  },
-  {
-    id: 'hist-2',
-    data: '18/08/2026 - 10:15',
-    nomeLista: 'Churrasco de Fim de Semana',
-    totalItens: 4,
-    itens: [
-      { id: '10', nome: 'Picanha Bovina kg', quantidade: 2, categoria: 'Açougue' },
-      { id: '11', nome: 'Cerveja Pilsen Lata 350ml', quantidade: 12, categoria: 'Bebidas' },
-      { id: '12', nome: 'Carvão Vegetal 3kg', quantidade: 1, categoria: 'Outros' },
-      { id: '13', nome: 'Linguiça Toscânia kg', quantidade: 1.5, categoria: 'Açougue' },
-    ]
   }
 ];
 
-// Dados simulados de folhetos/encartes por mercado
 const PRECOS_FOLHETOS: { [produtoNome: string]: { [mercado: string]: number } } = {
   'Arroz Agulhinha Tipo 1 5kg': { 'Atacadão': 21.90, 'Assaí': 22.50, 'Carrefour': 25.90 },
   'Feijão Carioca 1kg': { 'Atacadão': 6.80, 'Assaí': 6.90, 'Pão de Açúcar': 8.50 },
   'Óleo de Soja 900ml': { 'Atacadão': 5.49, 'Carrefour': 5.99, 'Pão de Açúcar': 6.20 },
   'Leite Integral 1L': { 'Assaí': 4.29, 'Carrefour': 4.59 },
   'Café Torrado e Moído 500g': { 'Atacadão': 14.90, 'Assaí': 15.20, 'Carrefour': 16.80 },
-  // Detergente Líquido não está em nenhum folheto -> acionará SEFAZ
 };
 
-// Médias de Preços da SEFAZ (fallback)
 const MEDIAS_SEFAZ: { [produtoNome: string]: number } = {
   'Arroz Agulhinha Tipo 1 5kg': 23.80,
   'Feijão Carioca 1kg': 7.40,
@@ -102,28 +82,48 @@ const MEDIAS_SEFAZ: { [produtoNome: string]: number } = {
   'Leite Integral 1L': 4.60,
   'Café Torrado e Moído 500g': 15.90,
   'Detergente Líquido 500ml': 2.45,
-  'Picanha Bovina kg': 69.90,
-  'Cerveja Pilsen Lata 350ml': 3.89,
-  'Carvão Vegetal 3kg': 18.50,
-  'Linguiça Toscânia kg': 21.90
 };
 
 const MERCADOS_DISPONIVEIS = ['Atacadão', 'Assaí', 'Carrefour', 'Pão de Açúcar'];
 
 export default function HistoricoComparativoPage() {
-  const [listaSelecionadaId, setListaSelecionadaId] = useState<string>(HISTORICO_MOCK[0].id);
+  const [historico, setHistorico] = useState<HistoricoEscaneamento[]>(HISTORICO_DEFAULT);
+  const [listaSelecionadaId, setListaSelecionadaId] = useState<string>('');
   const [filtroOrigem, setFiltroOrigem] = useState<'todos' | 'folheto' | 'sefaz'>('todos');
 
-  const listaAtual = useMemo(() => {
-    return HISTORICO_MOCK.find(h => h.id === listaSelecionadaId) || HISTORICO_MOCK[0];
-  }, [listaSelecionadaId]);
+  // Carrega o histórico do localStorage ao montar o componente
+  const carregarHistorico = () => {
+    if (typeof window !== 'undefined') {
+      const salvo = localStorage.getItem('historico_escaneamentos');
+      if (salvo) {
+        try {
+          const parsed = JSON.parse(salvo);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setHistorico(parsed);
+            setListaSelecionadaId(parsed[0].id);
+            return;
+          }
+        } catch (e) {
+          console.error('Erro ao ler histórico:', e);
+        }
+      }
+    }
+    setListaSelecionadaId(HISTORICO_DEFAULT[0].id);
+  };
 
-  // Processa os itens calculando preços por mercado e identificando fallback da SEFAZ
+  useEffect(() => {
+    carregarHistorico();
+  }, []);
+
+  const listaAtual = useMemo(() => {
+    return historico.find(h => h.id === listaSelecionadaId) || historico[0] || HISTORICO_DEFAULT[0];
+  }, [historico, listaSelecionadaId]);
+
   const { itensProcessados, rankingMercados } = useMemo(() => {
     const processados: ItemComPrecos[] = listaAtual.itens.map(item => {
       const precosMercados: { [key: string]: number } = {};
       const usouSefaz: { [key: string]: boolean } = {};
-      const precoMedioSefaz = MEDIAS_SEFAZ[item.nome] || 10.00; // Valor padrão caso não tenha na SEFAZ
+      const precoMedioSefaz = MEDIAS_SEFAZ[item.nome] || 10.00;
 
       MERCADOS_DISPONIVEIS.forEach(mercado => {
         const precoFolheto = PRECOS_FOLHETOS[item.nome]?.[mercado];
@@ -131,7 +131,6 @@ export default function HistoricoComparativoPage() {
           precosMercados[mercado] = precoFolheto;
           usouSefaz[mercado] = false;
         } else {
-          // Fallback: Média de preços da SEFAZ
           precosMercados[mercado] = precoMedioSefaz;
           usouSefaz[mercado] = true;
         }
@@ -145,7 +144,6 @@ export default function HistoricoComparativoPage() {
       };
     });
 
-    // Calcula total por mercado e gera ranking
     const totaisMercados = MERCADOS_DISPONIVEIS.map(mercado => {
       let totalLista = 0;
       let qtdFolheto = 0;
@@ -170,11 +168,10 @@ export default function HistoricoComparativoPage() {
       };
     });
 
-    // Ordena do menor valor para o maior
     totaisMercados.sort((a, b) => a.totalLista - b.totalLista);
 
-    const menorValor = totaisMercados[0].totalLista;
-    const maiorValor = totaisMercados[totaisMercados.length - 1].totalLista;
+    const menorValor = totaisMercados[0]?.totalLista || 0;
+    const maiorValor = totaisMercados[totaisMercados.length - 1]?.totalLista || 0;
 
     const ranking: RankingMercado[] = totaisMercados.map((m, index) => {
       const diferencaParaMelhor = m.totalLista - menorValor;
@@ -196,8 +193,8 @@ export default function HistoricoComparativoPage() {
     return { itensProcessados: processados, rankingMercados: ranking };
   }, [listaAtual]);
 
-  const mercadoCampeao = rankingMercados[0];
-  const mercadoMaisCaro = rankingMercados[rankingMercados.length - 1];
+  const mercadoCampeao = rankingMercados[0] || { nome: '-', totalLista: 0, qtdFolheto: 0 };
+  const mercadoMaisCaro = rankingMercados[rankingMercados.length - 1] || { totalLista: 0 };
   const economiaMaxima = mercadoMaisCaro.totalLista - mercadoCampeao.totalLista;
 
   return (
@@ -216,20 +213,31 @@ export default function HistoricoComparativoPage() {
             </p>
           </div>
 
-          {/* Seletor de Listas do Histórico */}
-          <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-            <Calendar className="w-5 h-5 text-indigo-500 ml-2" />
-            <select
-              value={listaSelecionadaId}
-              onChange={(e) => setListaSelecionadaId(e.target.value)}
-              className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer pr-4"
+          <div className="flex items-center gap-2">
+            {/* Botão de Atualizar dados */}
+            <button
+              onClick={carregarHistorico}
+              title="Atualizar histórico"
+              className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors"
             >
-              {HISTORICO_MOCK.map((hist) => (
-                <option key={hist.id} value={hist.id}>
-                  {hist.nomeLista} ({hist.data})
-                </option>
-              ))}
-            </select>
+              <RefreshCw className="w-5 h-5" />
+            </button>
+
+            {/* Seletor de Listas do Histórico */}
+            <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+              <Calendar className="w-5 h-5 text-indigo-500 ml-2" />
+              <select
+                value={listaSelecionadaId}
+                onChange={(e) => setListaSelecionadaId(e.target.value)}
+                className="bg-transparent font-semibold text-slate-700 outline-none cursor-pointer pr-4"
+              >
+                {historico.map((hist) => (
+                  <option key={hist.id} value={hist.id}>
+                    {hist.nomeLista} ({hist.data})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -277,9 +285,6 @@ export default function HistoricoComparativoPage() {
               <Trophy className="w-5 h-5 text-amber-500" />
               Ranking de Mercados para esta Lista
             </h2>
-            <span className="text-xs text-slate-500">
-              Ordenado do menor preço total para o maior
-            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -294,7 +299,6 @@ export default function HistoricoComparativoPage() {
                       : 'border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
                 >
-                  {/* Badge de Posição */}
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
                     <span
                       className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
@@ -312,7 +316,6 @@ export default function HistoricoComparativoPage() {
                     <span className="font-bold text-slate-800">{m.nome}</span>
                   </div>
 
-                  {/* Valor Total */}
                   <div className="space-y-1 mb-4">
                     <div className="text-xs text-slate-400 font-medium">Total Estimado</div>
                     <div className="text-2xl font-black text-slate-900">
@@ -329,7 +332,6 @@ export default function HistoricoComparativoPage() {
                     )}
                   </div>
 
-                  {/* Fontes de Preços (Folheto vs SEFAZ) */}
                   <div className="space-y-2 pt-3 border-t border-slate-100 text-xs">
                     <div className="flex items-center justify-between text-slate-600">
                       <span className="flex items-center gap-1 text-indigo-600 font-medium">
@@ -350,17 +352,6 @@ export default function HistoricoComparativoPage() {
           </div>
         </div>
 
-        {/* Aviso Explicativo da SEFAZ */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-900 text-sm">
-          <HelpCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <strong className="font-bold text-amber-950 block">Como funciona o cálculo de preços?</strong>
-            <p className="text-amber-800/90 leading-relaxed">
-              Priorizamos os valores vigentes dos <strong>folhetos e encartes de promoções</strong> dos mercados. Caso um produto da sua lista não esteja anunciado no encarte oficial do estabelecimento, utilizamos a <strong>média histórica de notas fiscais (SEFAZ)</strong> para garantir que o cálculo total da sua compra seja o mais preciso possível.
-            </p>
-          </div>
-        </div>
-
         {/* Tabela Detalhada de Comparação de Itens */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden space-y-4 p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -368,50 +359,9 @@ export default function HistoricoComparativoPage() {
               <h3 className="text-lg font-bold text-slate-900">
                 Detalhamento Item por Item
               </h3>
-              <p className="text-xs text-slate-500">
-                Compare os valores individuais aplicados em cada supermercado
-              </p>
-            </div>
-
-            {/* Filtros da Tabela */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium">Exibir:</span>
-              <div className="bg-slate-100 p-1 rounded-lg flex gap-1">
-                <button
-                  onClick={() => setFiltroOrigem('todos')}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                    filtroOrigem === 'todos'
-                      ? 'bg-white text-indigo-600 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Todos ({itensProcessados.length})
-                </button>
-                <button
-                  onClick={() => setFiltroOrigem('folheto')}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                    filtroOrigem === 'folheto'
-                      ? 'bg-white text-indigo-600 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Em Oferta (Folheto)
-                </button>
-                <button
-                  onClick={() => setFiltroOrigem('sefaz')}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                    filtroOrigem === 'sefaz'
-                      ? 'bg-white text-indigo-600 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Média SEFAZ
-                </button>
-              </div>
             </div>
           </div>
 
-          {/* Tabela Responsiva */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -430,7 +380,6 @@ export default function HistoricoComparativoPage() {
                 {itensProcessados.map(item => {
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                      {/* Nome do Produto */}
                       <td className="py-3.5 px-4 font-semibold text-slate-800">
                         <div>{item.nome}</div>
                         <span className="text-[11px] font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-0.5">
@@ -438,41 +387,31 @@ export default function HistoricoComparativoPage() {
                         </span>
                       </td>
 
-                      {/* Quantidade */}
                       <td className="py-3.5 px-4 text-center font-bold text-slate-600">
                         {item.quantidade}x
                       </td>
 
-                      {/* Valor Médio SEFAZ */}
                       <td className="py-3.5 px-4 text-center text-slate-500 text-xs font-mono">
                         R$ {item.precoMedioSefaz.toFixed(2)}
                       </td>
 
-                      {/* Colunas por Mercado */}
                       {MERCADOS_DISPONIVEIS.map(mercado => {
                         const precoUnitario = item.precosMercados[mercado];
                         const foiSefaz = item.usouSefaz[mercado];
                         const totalItem = precoUnitario * item.quantidade;
-
-                        // Encontra o menor preço deste item entre todos os mercados
                         const menorPrecoItem = Math.min(...Object.values(item.precosMercados));
                         const isMenorPreco = precoUnitario === menorPrecoItem;
 
                         return (
                           <td key={mercado} className="py-3.5 px-4 text-right">
                             <div className="flex flex-col items-end">
-                              <span
-                                className={`font-bold font-mono ${
-                                  isMenorPreco ? 'text-emerald-600' : 'text-slate-700'
-                                }`}
-                              >
+                              <span className={`font-bold font-mono ${isMenorPreco ? 'text-emerald-600' : 'text-slate-700'}`}>
                                 R$ {totalItem.toFixed(2)}
                               </span>
                               <span className="text-[10px] text-slate-400 font-mono">
                                 ({item.quantidade}x R$ {precoUnitario.toFixed(2)})
                               </span>
 
-                              {/* Tag indicadora de Origem do Preço */}
                               {foiSefaz ? (
                                 <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded mt-1">
                                   <Info className="w-2.5 h-2.5" /> SEFAZ

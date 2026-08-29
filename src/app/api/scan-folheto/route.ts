@@ -1,25 +1,18 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { neon } from '@neondatabase/serverless';
+import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
+import { Regiao } from '@prisma/client';
 
-const sql = neon(process.env.DATABASE_URL!);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Função auxiliar para gerar um ID no formato CUID/UUID aceito pelo Prisma
-function generateId(): string {
-  return 'c' + randomUUID().replace(/-/g, '').substring(0, 24);
-}
-
-// Normaliza o texto da região para o ENUM do PostgreSQL/Prisma
-function normalizarRegiao(regiaoText: string): string {
+function normalizarRegiao(regiaoText: string): Regiao {
   const r = (regiaoText || '').toUpperCase();
-  if (r.includes('NORTE')) return 'NORTE';
-  if (r.includes('NORDESTE')) return 'NORDESTE';
-  if (r.includes('CENTRO')) return 'CENTRO_OESTE';
-  if (r.includes('SUL') && !r.includes('SUDESTE')) return 'SUL';
-  return 'SUDESTE'; // Padrão caso não seja informada
+  if (r.includes('NORTE')) return Regiao.NORTE;
+  if (r.includes('NORDESTE')) return Regiao.NORDESTE;
+  if (r.includes('CENTRO')) return Regiao.CENTRO_OESTE;
+  if (r.includes('SUL') && !r.includes('SUDESTE')) return Regiao.SUL;
+  return Regiao.SUDESTE;
 }
 
 export async function POST(req: Request) {
@@ -33,26 +26,25 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Token inválido ou ausente, salvando oferta sem usuário.');
+        console.warn('Token ausente ou inválido, salvando oferta como pública sem usuário.');
       }
     }
 
     const body = await req.json();
     const imagemBase64 = body.imagemBase64 || body.image || body.file;
-    const mercado = body.mercado || body.supermercado || 'Supermercado';
+    const mercado = body.mercado || body.supermercado || 'Mercado Geral';
     const regiaoEnum = normalizarRegiao(body.regiao || body.cidade || '');
 
     if (!imagemBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem foi recebida.' }, { status: 400 });
+      return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
-    // Instanciação com o modelo gemini-3.6-flash
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise a imagem deste folheto do mercado ${mercado}.
+    const prompt = `Analise este folheto do mercado ${mercado}.
 Extraia todos os produtos com seus preços.
-Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou formatação markdown:
+Retorne EXCLUSIVAMENTE um array JSON puro:
 [{"produto": "Nome do Produto", "preco": 10.50}]`;
 
     const result = await model.generateContent([
@@ -61,51 +53,43 @@ Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou formatação
     ]);
 
     const rawText = result.response.text();
-    let ofertas: any[] = [];
-    
+    let ofertasExtraidas: { produto: string; preco: number }[] = [];
+
     try {
       const jsonStart = rawText.indexOf('[');
       const jsonEnd = rawText.lastIndexOf(']') + 1;
       const cleanJson = rawText.substring(jsonStart, jsonEnd);
-      ofertas = JSON.parse(cleanJson);
+      ofertasExtraidas = JSON.parse(cleanJson);
     } catch (e) {
-      return NextResponse.json({ error: 'Erro ao interpretar dados do folheto.' }, { status: 422 });
+      return NextResponse.json({ error: 'Não foi possível interpretar a imagem.' }, { status: 422 });
     }
 
-    if (!Array.isArray(ofertas) || ofertas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto foi identificado no folheto.' }, { status: 422 });
+    if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
+      return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
     }
 
-    // GRAVA CADA PRODUTO NA TABELA "Oferta" DO PRISMA
-    const ofertasInseridas = [];
-    for (const item of ofertas) {
-      const nomeProduto = item.produto || item.nome || 'Produto Sem Nome';
-      const precoProduto = parseFloat(item.preco || 0);
-      const ofertaId = generateId();
-
-      const [ofertaCriada] = await sql`
-        INSERT INTO "Oferta" ("id", "mercado", "regiao", "produto", "preco", "usuarioId", "createdAt")
-        VALUES (
-          ${ofertaId},
-          ${mercado},
-          ${regiaoEnum}::"Regiao",
-          ${nomeProduto},
-          ${precoProduto},
-          ${usuarioId},
-          NOW()
-        )
-        RETURNING *;
-      `;
-      ofertasInseridas.push(ofertaCriada);
-    }
+    // SALVA DIRETO VIA PRISMA (Salva para todos verem)
+    const ofertasSalvas = await prisma.$transaction(
+      ofertasExtraidas.map((item) =>
+        prisma.oferta.create({
+          data: {
+            mercado,
+            regiao: regiaoEnum,
+            produto: item.produto || 'Produto Sem Nome',
+            preco: parseFloat(String(item.preco || 0)),
+            usuarioId: usuarioId, // Pode ser null se anônimo
+          },
+        })
+      )
+    );
 
     return NextResponse.json({
       success: true,
-      totalProcessados: ofertasInseridas.length,
-      itens: ofertasInseridas
+      totalProcessados: ofertasSalvas.length,
+      itens: ofertasSalvas,
     });
   } catch (error: any) {
-    console.error('Erro no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno ao salvar ofertas' }, { status: 500 });
+    console.error('Erro no scan-folheto via Prisma:', error);
+    return NextResponse.json({ error: error.message || 'Erro interno ao salvar ofertas.' }, { status: 500 });
   }
 }

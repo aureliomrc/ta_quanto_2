@@ -11,16 +11,14 @@ export async function POST(req: Request) {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
-    if (!token) {
-      return NextResponse.json({ error: 'Token de autenticação não fornecido.' }, { status: 401 });
-    }
-
-    let userId = '';
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-      userId = decoded.id;
-    } catch {
-      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
+    let userId: string | null = null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
+        userId = decoded.id;
+      } catch {
+        // Se o token falhar, continua permitindo salvar o escaneamento como público
+      }
     }
 
     const { imagemBase64, mercado, regiao } = await req.json();
@@ -29,25 +27,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Imagem não informada.' }, { status: 400 });
     }
 
-    // Configuração com gemini-3.6-flash
+    // Configurado com gemini-3.6-flash
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise este folheto de ofertas do mercado ${mercado} (${regiao}).
-Extraia todos os produtos com seus respectivos preços visíveis.
-Retorne APENAS um array JSON no formato:
+    const prompt = `Analise este folheto do mercado ${mercado || 'Geral'} (${regiao || 'Geral'}).
+Extraia todos os produtos com seus preços.
+Retorne APENAS um array JSON válido sem marcações markdown:
 [
   { "produto": "Nome do Produto", "preco": 10.90, "quantidade": 1, "categoria": "Mercearia" }
 ]`;
 
     const result = await model.generateContent([
       prompt,
-      {
-        inlineData: {
-          data: base64Clean,
-          mimeType: 'image/jpeg',
-        },
-      },
+      { inlineData: { data: base64Clean, mimeType: 'image/jpeg' } },
     ]);
 
     const responseText = result.response.text();
@@ -55,12 +48,11 @@ Retorne APENAS um array JSON no formato:
     const ofertas = JSON.parse(cleanedJson);
 
     if (!Array.isArray(ofertas) || ofertas.length === 0) {
-      return NextResponse.json({ error: 'Nenhuma oferta identificada na imagem.' }, { status: 422 });
+      return NextResponse.json({ error: 'Nenhuma oferta identificada.' }, { status: 422 });
     }
 
-    // REGRA DE VISIBILIDADE:
-    // Salva o folheto com is_public = TRUE para ser acessível a TODOS os usuários
-    const nomeLista = `Folheto ${mercado} (${regiao})`;
+    // SALVA O FOLHETO COMO PÚBLICO (is_public = TRUE) PARA TODOS OS USUÁRIOS
+    const nomeLista = `Folheto ${mercado || 'Geral'} (${regiao || 'Geral'})`;
     const [historicoCriado] = await sql`
       INSERT INTO historico_escaneamentos (user_id, nome_lista, mercado, regiao, is_public)
       VALUES (${userId}, ${nomeLista}, ${mercado}, ${regiao}, TRUE)
@@ -76,7 +68,7 @@ Retorne APENAS um array JSON no formato:
           ${Number(item.preco || 0)},
           ${item.quantidade || 1},
           ${item.categoria || 'Geral'}
-        )
+        );
       `;
     }
 
@@ -87,6 +79,6 @@ Retorne APENAS um array JSON no formato:
     });
   } catch (error: any) {
     console.error('Erro ao processar folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
   }
 }

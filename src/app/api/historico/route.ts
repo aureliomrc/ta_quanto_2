@@ -1,46 +1,23 @@
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
-import jwt from 'jsonwebtoken';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-
-    if (!token) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-    const userId = decoded.id;
-
-    const escaneamentos = await sql`
-      SELECT id, nome_lista as "nomeLista", mercado as "mercadoCapturado", 
-             to_char(criado_em, 'DD/MM/YYYY - HH24:MI') as data
-      FROM historico_escaneamentos
-      WHERE user_id = ${userId}
-      ORDER BY criado_em DESC;
+    // Traz todos os folhetos que são públicos (is_public = TRUE) OU que pertencem a qualquer usuário
+    const historico = await sql`
+      SELECT h.id, h.nome_lista, h.mercado, h.regiao, h.created_at,
+             COUNT(i.id) as total_itens
+      FROM historico_escaneamentos h
+      LEFT JOIN historico_itens i ON h.id = i.historico_id
+      WHERE h.is_public = TRUE OR h.is_public IS NULL
+      GROUP BY h.id, h.nome_lista, h.mercado, h.regiao, h.created_at
+      ORDER BY h.created_at DESC;
     `;
 
-    const historicoCompleto = await Promise.all(
-      escaneamentos.map(async (esc) => {
-        const itens = await sql`
-          SELECT id, nome, CAST(preco_capturado AS FLOAT) as "precoCapturado", quantidade, categoria
-          FROM historico_itens
-          WHERE historico_id = ${esc.id};
-        `;
-        return {
-          ...esc,
-          totalItens: itens.length,
-          itens,
-        };
-      })
-    );
-
-    return NextResponse.json(historicoCompleto);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, historico });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

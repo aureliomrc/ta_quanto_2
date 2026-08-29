@@ -37,22 +37,22 @@ model Lista {
 }
 
 model ItemLista {
-  id         String  @id @default(cuid())
-  listaId    String
-  lista      Lista   @relation(fields: [listaId], references: [id], onDelete: Cascade)
-  nome       String
-  quantidade Int     @default(1)
-  comprado   Boolean @default(false)
+  id        String  @id @default(cuid())
+  listaId   String
+  lista     Lista   @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  nome      String
+  quantidade Int    @default(1)
+  comprado  Boolean @default(false)
 }
 
 model Oferta {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   mercado   String
   regiao    Regiao
   validade  DateTime?
   produto   String
   preco     Float
   usuarioId String?
-  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
-  createdAt DateTime @default(now())
+  usuario   Usuario?  @relation(fields: [usuarioId], references: [id])
+  createdAt DateTime  @default(now())
 }

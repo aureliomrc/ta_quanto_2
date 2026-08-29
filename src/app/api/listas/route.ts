@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
 
+// GET: Traz listas padrão (isPadrao: true) e listas do usuário logado
 export async function GET(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
       where: {
         OR: [
           { isPadrao: true },
-          { usuarioId: usuarioId ? usuarioId : undefined },
+          ...(usuarioId ? [{ usuarioId }] : []),
         ],
       },
       include: {
@@ -34,11 +35,11 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, listas });
   } catch (err: any) {
-    console.error('Erro ao buscar listas:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
+// POST: Criar nova lista OU adicionar item em lista existente
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     const nomeItem = body.nomeItem || body.produto || body.item;
     const quantidade = parseInt(body.quantidade || 1);
 
-    // 1. CRIAR NOVA LISTA
+    // 1. Criar Nova Lista
     if (nomeNovaLista && !nomeItem) {
       const novaLista = await prisma.lista.create({
         data: {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, lista: novaLista });
     }
 
-    // 2. INCLUIR ITEM NA LISTA
+    // 2. Adicionar Item na Lista
     if (listaId && nomeItem) {
       const novoItem = await prisma.itemLista.create({
         data: {
@@ -78,16 +79,11 @@ export async function POST(req: Request) {
           comprado: false,
         },
       });
-
       return NextResponse.json({ success: true, item: novoItem });
     }
 
-    return NextResponse.json(
-      { error: 'Envie nomeNovaLista para criar uma lista ou listaId + nomeItem para adicionar item.' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
   } catch (err: any) {
-    console.error('Erro no POST /api/listas:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Token ausente ou inválido, salvando oferta como pública.');
+        console.warn('Scan sem usuário logado. Salvando publicamente.');
       }
     }
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const regiaoEnum = normalizarRegiao(body.regiao || body.cidade || '');
 
     if (!imagemBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
+      return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
@@ -61,14 +61,14 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       const cleanJson = rawText.substring(jsonStart, jsonEnd);
       ofertasExtraidas = JSON.parse(cleanJson);
     } catch (e) {
-      return NextResponse.json({ error: 'Não foi possível interpretar a imagem.' }, { status: 422 });
+      return NextResponse.json({ error: 'Erro ao interpretar dados do folheto.' }, { status: 422 });
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
+      return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
     }
 
-    // Salva direto no Prisma
+    // Gravação no Prisma
     const ofertasSalvas = await prisma.$transaction(
       ofertasExtraidas.map((item) =>
         prisma.oferta.create({
@@ -90,6 +90,6 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
     });
   } catch (error: any) {
     console.error('Erro no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno ao salvar ofertas.' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Erro ao processar folheto.' }, { status: 500 });
   }
 }

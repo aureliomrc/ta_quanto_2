@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET() {
   try {
@@ -12,6 +14,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, historico: ofertas });
   } catch (err: any) {
+    console.error('Erro ao buscar histórico:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

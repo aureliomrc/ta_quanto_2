@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
-// GET: Retorna as listas públicas/padrão + as listas do usuário
+const prisma = new PrismaClient();
+
 export async function GET(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -38,7 +39,6 @@ export async function GET(req: Request) {
   }
 }
 
-// POST: Criar nova lista OU adicionar item a uma lista existente
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');

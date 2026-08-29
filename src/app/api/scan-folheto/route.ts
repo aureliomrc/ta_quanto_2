@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient, Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
-import { Regiao } from '@prisma/client';
 
+const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 function normalizarRegiao(regiaoText: string): Regiao {
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Token ausente ou inválido, salvando oferta como pública sem usuário.');
+        console.warn('Token ausente ou inválido, salvando oferta como pública.');
       }
     }
 
@@ -68,7 +68,7 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
     }
 
-    // SALVA DIRETO VIA PRISMA (Salva para todos verem)
+    // Salva direto no Prisma
     const ofertasSalvas = await prisma.$transaction(
       ofertasExtraidas.map((item) =>
         prisma.oferta.create({
@@ -77,7 +77,7 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
             regiao: regiaoEnum,
             produto: item.produto || 'Produto Sem Nome',
             preco: parseFloat(String(item.preco || 0)),
-            usuarioId: usuarioId, // Pode ser null se anônimo
+            usuarioId: usuarioId,
           },
         })
       )
@@ -89,7 +89,7 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       itens: ofertasSalvas,
     });
   } catch (error: any) {
-    console.error('Erro no scan-folheto via Prisma:', error);
+    console.error('Erro no scan-folheto:', error);
     return NextResponse.json({ error: error.message || 'Erro interno ao salvar ofertas.' }, { status: 500 });
   }
 }

@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
-const prisma = new PrismaClient();
+export const dynamic = 'force-dynamic';
 
-// GET: Traz listas padrão (isPadrao: true) e listas do usuário logado
 export async function GET(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -33,13 +32,13 @@ export async function GET(req: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, listas });
+    return NextResponse.json({ success: true, listas: listas || [] });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Erro no GET /api/listas:', err);
+    return NextResponse.json({ success: false, listas: [], error: err.message }, { status: 200 });
   }
 }
 
-// POST: Criar nova lista OU adicionar item em lista existente
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -82,8 +81,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, item: novoItem });
     }
 
-    return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
+    return NextResponse.json({ error: 'Informe nomeNovaLista ou (listaId + nomeItem).' }, { status: 400 });
   } catch (err: any) {
+    console.error('Erro no POST /api/listas:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

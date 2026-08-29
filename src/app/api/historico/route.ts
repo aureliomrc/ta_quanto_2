@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
@@ -12,8 +12,17 @@ export async function GET() {
       take: 100,
     });
 
-    return NextResponse.json({ success: true, historico: ofertas });
+    return NextResponse.json({ 
+      success: true, 
+      historico: ofertas || [] 
+    });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Erro ao buscar histórico:', err);
+    // Retorna um array vazio em caso de erro para não quebrar a tela do front-end
+    return NextResponse.json({ 
+      success: false, 
+      historico: [], 
+      error: err.message || 'Erro ao carregar histórico.' 
+    }, { status: 200 });
   }
 }

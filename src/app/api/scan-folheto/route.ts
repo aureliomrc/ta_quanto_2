@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
-import { createId } from '@paralleldrive/cuid2'; // ou gerador de cuid simples
+import { randomUUID } from 'crypto';
 
 const sql = neon(process.env.DATABASE_URL!);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Função aux para gerar CUID compatível se necessário
-function generateCuid() {
-  return 'c' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+// Função auxiliar para gerar um ID no formato CUID/UUID aceito pelo Prisma
+function generateId(): string {
+  return 'c' + randomUUID().replace(/-/g, '').substring(0, 24);
 }
 
 // Normaliza o texto da região para o ENUM do PostgreSQL/Prisma
@@ -19,7 +19,7 @@ function normalizarRegiao(regiaoText: string): string {
   if (r.includes('NORDESTE')) return 'NORDESTE';
   if (r.includes('CENTRO')) return 'CENTRO_OESTE';
   if (r.includes('SUL') && !r.includes('SUDESTE')) return 'SUL';
-  return 'SUDESTE'; // Padrão caso não identificada
+  return 'SUDESTE'; // Padrão caso não seja informada
 }
 
 export async function POST(req: Request) {
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Token inválido/ausente, salvando oferta sem usuário.');
+        console.warn('Token inválido ou ausente, salvando oferta sem usuário.');
       }
     }
 
@@ -51,8 +51,8 @@ export async function POST(req: Request) {
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise a imagem deste folheto do mercado ${mercado}.
-Extraia todos os produtos com preços.
-Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou markdown:
+Extraia todos os produtos com seus preços.
+Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou formatação markdown:
 [{"produto": "Nome do Produto", "preco": 10.50}]`;
 
     const result = await model.generateContent([
@@ -73,15 +73,15 @@ Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou markdown:
     }
 
     if (!Array.isArray(ofertas) || ofertas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
+      return NextResponse.json({ error: 'Nenhum produto foi identificado no folheto.' }, { status: 422 });
     }
 
-    // GRAVA CADA PRODUTO NA TABELA "Oferta" DO SEU SCHEMA PRISMA
+    // GRAVA CADA PRODUTO NA TABELA "Oferta" DO PRISMA
     const ofertasInseridas = [];
     for (const item of ofertas) {
       const nomeProduto = item.produto || item.nome || 'Produto Sem Nome';
       const precoProduto = parseFloat(item.preco || 0);
-      const ofertaId = generateCuid();
+      const ofertaId = generateId();
 
       const [ofertaCriada] = await sql`
         INSERT INTO "Oferta" ("id", "mercado", "regiao", "produto", "preco", "usuarioId", "createdAt")

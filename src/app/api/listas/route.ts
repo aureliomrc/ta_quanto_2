@@ -4,32 +4,55 @@ import jwt from 'jsonwebtoken';
 
 const sql = neon(process.env.DATABASE_URL!);
 
+function generateCuid() {
+  return 'c' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+}
+
+// GET: Retorna todas as listas padrão + listas do usuário logado com seus respectivos itens
 export async function GET(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
-    let userId = '';
+    let usuarioId: string | null = null;
 
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-        userId = decoded.id;
+        usuarioId = decoded.id;
       } catch {}
     }
 
-    // Retorna as Listas Padrão (públicas) E as listas do próprio usuário
+    // Busca as listas
     const listas = await sql`
-      SELECT * FROM listas 
-      WHERE is_padrao = TRUE OR user_id = ${userId} OR user_id IS NULL
-      ORDER BY is_padrao DESC, created_at DESC;
+      SELECT * FROM "Lista"
+      WHERE "isPadrao" = TRUE OR "usuarioId" = ${usuarioId}
+      ORDER BY "createdAt" DESC;
     `;
 
-    return NextResponse.json({ success: true, listas });
+    // Busca os itens de todas essas listas
+    const listaIds = listas.map((l: any) => l.id);
+    let itens: any[] = [];
+    
+    if (listaIds.length > 0) {
+      itens = await sql`
+        SELECT * FROM "ItemLista"
+        WHERE "listaId" = ANY(${listaIds});
+      `;
+    }
+
+    // Agrupa os itens em suas respectivas listas
+    const listasComItens = listas.map((lista: any) => ({
+      ...lista,
+      itens: itens.filter((item: any) => item.listaId === lista.id)
+    }));
+
+    return NextResponse.json({ success: true, listas: listasComItens });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
+// POST: Cria nova lista OU adiciona item a uma lista existente
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -42,44 +65,42 @@ export async function POST(req: Request) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
     const body = await req.json();
 
-    // Aceita múltiplos nomes de parâmetros enviados do front-end
-    const nomeNovaLista = body.nomeNovaLista || body.nomeLista || body.tituloLista;
+    const nomeNovaLista = body.nomeNovaLista || body.nomeLista || body.nome;
     const listaId = body.listaId || body.lista_id;
-    const nomeItem = body.nomeItem || body.nome || body.produto;
-    const precoCustom = body.precoCustomizado || body.preco || body.preco_customizado;
-    const qtd = body.quantidade || 1;
-    const cat = body.categoria || 'Geral';
+    const nomeItem = body.nomeItem || body.produto || body.item;
+    const quantidade = parseInt(body.quantidade || 1);
 
-    // AÇÃO 1: CRIAR NOVA LISTA
-    if (nomeNovaLista && !listaId && !nomeItem) {
+    // -----------------------------------------------------------
+    // CASO 1: CRIAR NOVA LISTA
+    // -----------------------------------------------------------
+    if (nomeNovaLista && !nomeItem) {
+      const novaListaId = generateCuid();
       const [novaLista] = await sql`
-        INSERT INTO listas (user_id, nome, is_padrao)
-        VALUES (${decoded.id}, ${nomeNovaLista}, FALSE)
+        INSERT INTO "Lista" ("id", "nome", "isPadrao", "usuarioId", "createdAt")
+        VALUES (${novaListaId}, ${nomeNovaLista}, FALSE, ${decoded.id}, NOW())
         RETURNING *;
       `;
       return NextResponse.json({ success: true, lista: novaLista });
     }
 
-    // AÇÃO 2: INCLUIR NOVO ITEM NA LISTA (Padrão ou Privada)
+    // -----------------------------------------------------------
+    // CASO 2: INCLUIR NOVO ITEM NA LISTA
+    // -----------------------------------------------------------
     if (listaId && nomeItem) {
+      const novoItemid = generateCuid();
+      
       const [novoItem] = await sql`
-        INSERT INTO itens_lista (lista_id, user_id, nome, preco_customizado, quantidade, categoria)
-        VALUES (
-          ${parseInt(listaId)},
-          ${decoded.id},
-          ${nomeItem},
-          ${precoCustom ? parseFloat(precoCustom) : null},
-          ${parseInt(qtd)},
-          ${cat}
-        )
+        INSERT INTO "ItemLista" ("id", "listaId", "nome", "quantidade", "comprado")
+        VALUES (${novoItemid}, ${listaId}, ${nomeItem}, ${quantidade}, FALSE)
         RETURNING *;
       `;
+
       return NextResponse.json({ success: true, item: novoItem });
     }
 
-    return NextResponse.json({ error: 'Dados insuficientes para criar lista ou adicionar item.' }, { status: 400 });
+    return NextResponse.json({ error: 'Dados insuficientes. Informe o nome da lista ou o item e o listaId.' }, { status: 400 });
   } catch (err: any) {
-    console.error('Erro na rota de listas:', err);
+    console.error('Erro em POST /api/listas:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

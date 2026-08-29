@@ -10,65 +10,76 @@ export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
-
     let userId: string | null = null;
+
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         userId = decoded.id;
-      } catch {
-        // Se o token falhar, continua permitindo salvar o escaneamento como público
+      } catch (err) {
+        console.warn('Token inválido ou ausente, salvando como usuário anônimo.');
       }
     }
 
-    const { imagemBase64, mercado, regiao } = await req.json();
+    const body = await req.json();
+    const imagemBase64 = body.imagemBase64 || body.image || body.file;
+    const mercado = body.mercado || body.supermercado || 'Supermercado';
+    const regiao = body.regiao || body.cidade || 'Geral';
 
     if (!imagemBase64) {
-      return NextResponse.json({ error: 'Imagem não informada.' }, { status: 400 });
+      return NextResponse.json({ error: 'Nenhuma imagem foi recebida pelo servidor.' }, { status: 400 });
     }
 
-    // Configurado com gemini-3.6-flash
+    // Instanciação com gemini-3.6-flash
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise este folheto do mercado ${mercado || 'Geral'} (${regiao || 'Geral'}).
-Extraia todos os produtos com seus preços.
-Retorne APENAS um array JSON válido sem marcações markdown:
-[
-  { "produto": "Nome do Produto", "preco": 10.90, "quantidade": 1, "categoria": "Mercearia" }
-]`;
+    const prompt = `Analise a imagem deste folheto do mercado ${mercado}.
+Extraia todos os produtos com preços.
+Retorne EXCLUSIVAMENTE um array JSON puro, sem blocos de código ou textos adicionais, com o formato:
+[{"produto": "Nome", "preco": 10.50, "quantidade": 1, "categoria": "Mercearia"}]`;
 
     const result = await model.generateContent([
       prompt,
       { inlineData: { data: base64Clean, mimeType: 'image/jpeg' } },
     ]);
 
-    const responseText = result.response.text();
-    const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const ofertas = JSON.parse(cleanedJson);
-
-    if (!Array.isArray(ofertas) || ofertas.length === 0) {
-      return NextResponse.json({ error: 'Nenhuma oferta identificada.' }, { status: 422 });
+    const rawText = result.response.text();
+    
+    // Tratamento de extração segura do JSON do Gemini
+    let ofertas: any[] = [];
+    try {
+      const jsonStart = rawText.indexOf('[');
+      const jsonEnd = rawText.lastIndexOf(']') + 1;
+      const cleanJson = rawText.substring(jsonStart, jsonEnd);
+      ofertas = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error('Erro ao fazer parse do JSON do Gemini:', rawText);
+      return NextResponse.json({ error: 'Não foi possível interpretar a resposta visual do folheto.' }, { status: 422 });
     }
 
-    // SALVA O FOLHETO COMO PÚBLICO (is_public = TRUE) PARA TODOS OS USUÁRIOS
-    const nomeLista = `Folheto ${mercado || 'Geral'} (${regiao || 'Geral'})`;
+    if (!Array.isArray(ofertas) || ofertas.length === 0) {
+      return NextResponse.json({ error: 'Nenhum produto foi identificado no folheto.' }, { status: 422 });
+    }
+
+    // 1. GRAVA O CABEÇALHO DO ESCANEAMENTO COMO PÚBLICO (is_public = TRUE)
+    const nomeLista = `Folheto ${mercado} (${regiao})`;
     const [historicoCriado] = await sql`
       INSERT INTO historico_escaneamentos (user_id, nome_lista, mercado, regiao, is_public)
       VALUES (${userId}, ${nomeLista}, ${mercado}, ${regiao}, TRUE)
       RETURNING id;
     `;
 
+    // 2. GRAVA CADA ITEM EXTRAÍDO NO BANCO NEON
     for (const item of ofertas) {
+      const nomeProd = item.produto || item.nome || item.descricao || 'Produto Extraído';
+      const precoProd = parseFloat(item.preco || item.precoOferta || item.valor || 0);
+      const qtdProd = parseInt(item.quantidade || 1);
+      const catProd = item.categoria || 'Geral';
+
       await sql`
         INSERT INTO historico_itens (historico_id, nome, preco_capturado, quantidade, categoria)
-        VALUES (
-          ${historicoCriado.id},
-          ${item.produto || item.nome || 'Produto Sem Nome'},
-          ${Number(item.preco || 0)},
-          ${item.quantidade || 1},
-          ${item.categoria || 'Geral'}
-        );
+        VALUES (${historicoCriado.id}, ${nomeProd}, ${precoProd}, ${qtdProd}, ${catProd});
       `;
     }
 
@@ -76,9 +87,10 @@ Retorne APENAS um array JSON válido sem marcações markdown:
       success: true,
       historicoId: historicoCriado.id,
       totalProcessados: ofertas.length,
+      itens: ofertas
     });
   } catch (error: any) {
-    console.error('Erro ao processar folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
+    console.error('Erro detalhado no scan-folheto:', error);
+    return NextResponse.json({ error: error.message || 'Erro interno no servidor ao salvar folheto' }, { status: 500 });
   }
 }

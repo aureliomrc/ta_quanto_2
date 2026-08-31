@@ -7,32 +7,29 @@ export default function LoginPage() {
   const router = useRouter();
   const [aba, setAba] = useState<'login' | 'cadastro'>('login');
 
-  // Campos de Login
-  const [emailLogin, setEmailLogin] = useState('');
+  // Campos de Login (Usuário e Senha)
+  const [usuarioLogin, setUsuarioLogin] = useState('');
   const [senhaLogin, setSenhaLogin] = useState('');
 
-  // Campos de Cadastro
+  // Campos de Cadastro (Nome Completo, Usuário e Senha)
   const [nomeCadastro, setNomeCadastro] = useState('');
-  const [emailCadastro, setEmailCadastro] = useState('');
+  const [usuarioCadastro, setUsuarioCadastro] = useState('');
   const [senhaCadastro, setSenhaCadastro] = useState('');
 
-  // Mensagens
+  // Estados de feedback
   const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState('');
-  const [sucesso, setSucesso] = useState('');
+  const [mensagem, setMensagem] = useState<{ tipo: 'erro' | 'sucesso'; texto: string } | null>(null);
 
-  // Processa Entrar (PUT conforme rotas do seu backend)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErro('');
-    setSucesso('');
+    setMensagem(null);
     setCarregando(true);
 
     try {
       const res = await fetch('/api/auth/login', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLogin, senha: senhaLogin }),
+        body: JSON.stringify({ usuario: usuarioLogin, senha: senhaLogin }),
       });
 
       const data = await res.json();
@@ -41,20 +38,18 @@ export default function LoginPage() {
         localStorage.setItem('token', data.token);
         router.push('/listas');
       } else {
-        setErro(data.error || 'Email ou senha inválidos.');
+        setMensagem({ tipo: 'erro', texto: data.error || 'Usuário ou senha incorretos.' });
       }
     } catch {
-      setErro('Erro ao conectar com o servidor.');
+      setMensagem({ tipo: 'erro', texto: 'Erro de conexão com o servidor.' });
     } finally {
       setCarregando(false);
     }
   };
 
-  // Processa Cadastro (POST)
   const handleCadastro = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErro('');
-    setSucesso('');
+    setMensagem(null);
     setCarregando(true);
 
     try {
@@ -63,7 +58,7 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nome: nomeCadastro,
-          email: emailCadastro,
+          usuario: usuarioCadastro,
           senha: senhaCadastro,
         }),
       });
@@ -71,175 +66,170 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setSucesso('Conta criada com sucesso! Faça login para continuar.');
+        setMensagem({ tipo: 'sucesso', texto: 'Conta criada! Faça login para continuar.' });
         setAba('login');
-        setEmailLogin(emailCadastro);
+        setUsuarioLogin(usuarioCadastro);
         setSenhaLogin('');
       } else {
-        setErro(data.error || 'Erro ao realizar cadastro.');
+        setMensagem({ tipo: 'erro', texto: data.error || 'Erro ao realizar cadastro.' });
       }
     } catch {
-      setErro('Erro de conexão com o servidor.');
+      setMensagem({ tipo: 'erro', texto: 'Erro de conexão com o servidor.' });
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 font-sans">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200">
+    <div className="min-h-screen bg-[#0c6396] flex items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-sm bg-white rounded-[2rem] p-6 shadow-2xl space-y-5">
         
-        {/* Banner do Cabeçalho */}
-        <div className="bg-[#0d5c91] text-white p-6 text-center">
-          <h1 className="text-3xl font-black tracking-tight text-[#008744] bg-white inline-block px-4 py-1 rounded-2xl shadow-sm">
-            TÁ QUANTO?
-          </h1>
-          <p className="text-xs text-slate-200 mt-2 font-medium">
-            Economize e compare preços de supermercados em tempo real
+        {/* Cabeçalho da Marca */}
+        <div className="text-center space-y-1 pt-2">
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-3xl">🛒</span>
+            <h1 className="text-2xl font-black text-[#008744] tracking-tight">
+              TÁ QUANTO?
+            </h1>
+          </div>
+          <p className="text-xs font-semibold text-slate-500">
+            {aba === 'login' ? 'Faça login para comparar suas listas' : 'Crie sua conta para começar'}
           </p>
         </div>
 
-        {/* Seleção de Abas */}
-        <div className="flex border-b border-slate-200 bg-slate-50">
+        {/* Abas ENTRAR e CADASTRAR-SE */}
+        <div className="flex border-b border-slate-200 text-center font-bold text-xs tracking-wider">
           <button
             type="button"
-            onClick={() => {
-              setAba('login');
-              setErro('');
-              setSucesso('');
-            }}
-            className={`flex-1 py-3 text-xs font-black tracking-wider uppercase transition-all ${
+            onClick={() => { setAba('login'); setMensagem(null); }}
+            className={`flex-1 pb-2 transition-all ${
               aba === 'login'
-                ? 'bg-white text-[#0d5c91] border-b-2 border-[#0d5c91]'
+                ? 'text-[#008744] border-b-2 border-[#008744]'
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            Entrar
+            ENTRAR
           </button>
           <button
             type="button"
-            onClick={() => {
-              setAba('cadastro');
-              setErro('');
-              setSucesso('');
-            }}
-            className={`flex-1 py-3 text-xs font-black tracking-wider uppercase transition-all ${
+            onClick={() => { setAba('cadastro'); setMensagem(null); }}
+            className={`flex-1 pb-2 transition-all ${
               aba === 'cadastro'
-                ? 'bg-white text-[#0d5c91] border-b-2 border-[#0d5c91]'
+                ? 'text-[#008744] border-b-2 border-[#008744]'
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            Cadastrar-se
+            CADASTRAR-SE
           </button>
         </div>
 
-        <div className="p-6">
-          {/* Alertas */}
-          {erro && (
-            <div className="mb-4 bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">
-              {erro}
+        {/* Alertas */}
+        {mensagem && (
+          <div
+            className={`p-2.5 rounded-xl text-xs font-bold text-center border ${
+              mensagem.tipo === 'erro'
+                ? 'bg-red-50 text-red-600 border-red-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}
+          >
+            {mensagem.texto}
+          </div>
+        )}
+
+        {/* Formulário de Login */}
+        {aba === 'login' ? (
+          <form onSubmit={handleLogin} className="space-y-4 pt-1">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Nome de Usuário
+              </label>
+              <input
+                type="text"
+                required
+                value={usuarioLogin}
+                onChange={(e) => setUsuarioLogin(e.target.value)}
+                placeholder="Digite seu usuário"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#008744] text-slate-700 placeholder-slate-300"
+              />
             </div>
-          )}
-          {sucesso && (
-            <div className="mb-4 bg-emerald-50 text-emerald-700 border border-emerald-200 p-3 rounded-xl text-xs font-bold text-center">
-              {sucesso}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Senha
+              </label>
+              <input
+                type="password"
+                required
+                value={senhaLogin}
+                onChange={(e) => setSenhaLogin(e.target.value)}
+                placeholder="Digite sua senha"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#008744] text-slate-700 placeholder-slate-300"
+              />
             </div>
-          )}
 
-          {/* Form de Login */}
-          {aba === 'login' ? (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={emailLogin}
-                  onChange={(e) => setEmailLogin(e.target.value)}
-                  placeholder="seu@email.com"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
-                />
-              </div>
+            <button
+              type="submit"
+              disabled={carregando}
+              className="w-full bg-[#008744] hover:bg-emerald-700 text-white font-bold py-3 rounded-full text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 mt-2"
+            >
+              {carregando ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+        ) : (
+          /* Formulário de Cadastro */
+          <form onSubmit={handleCadastro} className="space-y-3 pt-1">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Nome Completo
+              </label>
+              <input
+                type="text"
+                required
+                value={nomeCadastro}
+                onChange={(e) => setNomeCadastro(e.target.value)}
+                placeholder="Digite seu nome completo"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#008744] text-slate-700 placeholder-slate-300"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Senha
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={senhaLogin}
-                  onChange={(e) => setSenhaLogin(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Nome de Usuário
+              </label>
+              <input
+                type="text"
+                required
+                value={usuarioCadastro}
+                onChange={(e) => setUsuarioCadastro(e.target.value)}
+                placeholder="Crie um usuário"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#008744] text-slate-700 placeholder-slate-300"
+              />
+            </div>
 
-              <button
-                type="submit"
-                disabled={carregando}
-                className="w-full bg-[#008744] hover:bg-emerald-700 text-white font-black py-3 rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 mt-2"
-              >
-                {carregando ? 'ENTRANDO...' : 'ENTRAR'}
-              </button>
-            </form>
-          ) : (
-            /* Form de Cadastro */
-            <form onSubmit={handleCadastro} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nome Completo
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nomeCadastro}
-                  onChange={(e) => setNomeCadastro(e.target.value)}
-                  placeholder="Ex: Maria Silva"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Senha
+              </label>
+              <input
+                type="password"
+                required
+                value={senhaCadastro}
+                onChange={(e) => setSenhaCadastro(e.target.value)}
+                placeholder="Crie sua senha"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#008744] text-slate-700 placeholder-slate-300"
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={emailCadastro}
-                  onChange={(e) => setEmailCadastro(e.target.value)}
-                  placeholder="seu@email.com"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
-                />
-              </div>
+            <button
+              type="submit"
+              disabled={carregando}
+              className="w-full bg-[#008744] hover:bg-emerald-700 text-white font-bold py-3 rounded-full text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 mt-2"
+            >
+              {carregando ? 'Cadastrando...' : 'Cadastrar'}
+            </button>
+          </form>
+        )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Senha
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={senhaCadastro}
-                  onChange={(e) => setSenhaCadastro(e.target.value)}
-                  placeholder="Crie uma senha segura"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={carregando}
-                className="w-full bg-[#0d5c91] hover:bg-blue-900 text-white font-black py-3 rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 mt-2"
-              >
-                {carregando ? 'CRIANDO CONTA...' : 'CRIAR MINHA CONTA'}
-              </button>
-            </form>
-          )}
-        </div>
       </div>
     </div>
   );

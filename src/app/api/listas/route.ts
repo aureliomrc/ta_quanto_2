@@ -1,82 +1,93 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+const ITENS_INICIAIS = [
+  'Arroz 5kg',
+  'Feijão Carioca 1kg',
+  'Óleo de Soja 900ml',
+  'Açúcar Refinado 1kg',
+  'Café Torrado 500g',
+  'Leite Integral 1L',
+  'Macarrão Espaguete 500g',
+  'Detergente Líquido',
+  'Sabão em Pó 1kg',
+  'Papel Higiênico (12 un)',
+];
+
 export async function GET() {
   try {
     const prismaAny = prisma as any;
 
-    if (!prismaAny.lista) {
-      return NextResponse.json({ id: '1', nome: 'Minha Lista', itens: [] });
-    }
-
-    // Tenta buscar a primeira lista
     let lista = await prismaAny.lista.findFirst({
       include: { itens: true },
     });
 
-    // Se não existir, cria a lista padrão
     if (!lista) {
       lista = await prismaAny.lista.create({
-        data: {
-          nome: 'Minha Lista de Compras',
-        },
-        include: { itens: true },
+        data: { nome: 'Minha Lista de Compras' },
       });
 
-      // Itens padrão inseridos um a um para evitar incompatibilidade de schema
-      const itensPadrao = [
-        'Arroz 5kg',
-        'Feijão Carioca 1kg',
-        'Óleo de Soja 900ml',
-        'Açúcar Refinado 1kg',
-        'Café Torrado 500g',
-        'Leite Integral 1L',
-        'Macarrão Espaguete 500g',
-        'Detergente Líquido',
-        'Sabão em Pó 1kg',
-        'Papel Higiênico (12 un)',
-      ];
-
-      for (const itemNome of itensPadrao) {
+      for (const itemNome of ITENS_INICIAIS) {
         try {
           await prismaAny.itemLista.create({
-            data: {
-              nome: itemNome,
-              quantidade: 1,
-              listaId: lista.id,
-            },
+            data: { nome: itemNome, quantidade: 1, listaId: lista.id },
           });
         } catch {
-          // Fallback caso no seu schema o campo se chame "produto" ou "descricao"
           try {
             await prismaAny.itemLista.create({
-              data: {
-                produto: itemNome,
-                quantidade: 1,
-                listaId: lista.id,
-              },
+              data: { produto: itemNome, quantidade: 1, listaId: lista.id },
             });
           } catch (e) {
-            console.error('Erro ao inserir item na lista:', e);
+            console.error('Erro ao popular item:', e);
           }
         }
       }
 
-      // Recarrega com os itens criados
       lista = await prismaAny.lista.findFirst({
         where: { id: lista.id },
         include: { itens: true },
       });
     }
 
-    return NextResponse.json(lista || { id: '1', nome: 'Minha Lista', itens: [] });
+    return NextResponse.json(lista);
   } catch (error) {
-    console.error('Erro no servidor ao buscar listas:', error);
-    // Retorna um objeto válido em vez de estourar Erro 500 na tela
-    return NextResponse.json({
-      id: '1',
-      nome: 'Minha Lista de Compras',
-      itens: [],
-    });
+    console.error('Erro na rota GET de listas:', error);
+    return NextResponse.json(
+      {
+        id: 'default',
+        nome: 'Minha Lista de Compras',
+        itens: ITENS_INICIAIS.map((item, idx) => ({ id: String(idx + 1), nome: item, quantidade: 1 })),
+      },
+      { status: 200 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { nome, listaId } = await req.json();
+    const prismaAny = prisma as any;
+
+    let targetListaId = listaId;
+    if (!targetListaId) {
+      const lista = await prismaAny.lista.findFirst();
+      targetListaId = lista?.id;
+    }
+
+    let novoItem;
+    try {
+      novoItem = await prismaAny.itemLista.create({
+        data: { nome, quantidade: 1, listaId: targetListaId },
+      });
+    } catch {
+      novoItem = await prismaAny.itemLista.create({
+        data: { produto: nome, quantidade: 1, listaId: targetListaId },
+      });
+    }
+
+    return NextResponse.json(novoItem);
+  } catch (error) {
+    console.error('Erro ao adicionar item:', error);
+    return NextResponse.json({ error: 'Erro ao adicionar item' }, { status: 500 });
   }
 }

@@ -20,16 +20,15 @@ export async function POST(req: Request) {
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    // Utiliza a versão Flash oficial com resposta forçada em JSON
+    // Modelo definido conforme o seu padrão funcional
+    const nomeModelo = 'gemini-3.6-flash';
+
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
+      model: nomeModelo,
     });
 
     const prompt = `Analise a imagem deste folheto/encarte de ofertas e extraia todos os produtos com seus respetivos preços. 
-    Retorne estritamente um array em JSON no seguinte formato:
+    Retorne EXCLUSIVAMENTE um array em formato JSON estrito, sem textos explicativos ou blocos adicionais, com o seguinte padrão:
     [{"produto": "Nome do Produto", "preco": 10.90}]`;
 
     const imageParts = [
@@ -44,14 +43,14 @@ export async function POST(req: Request) {
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
 
-    // Limpeza de marcação de código
+    // Remove eventuais formatações Markdown da resposta da IA
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
     const produtos = JSON.parse(cleanedText);
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro no processamento do Gemini:', error);
+    console.error('Erro detalhado da API Gemini:', error);
     return NextResponse.json(
       { error: error?.message || 'Erro ao processar imagem com a IA.' },
       { status: 500 }

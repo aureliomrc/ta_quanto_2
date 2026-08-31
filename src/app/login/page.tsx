@@ -26,7 +26,8 @@ export default function LoginPage() {
     setCarregando(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      // Aponta para /api/auth (caminho da sua rota atual)
+      const res = await fetch('/api/auth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuario: usuarioLogin, senha: senhaLogin }),
@@ -53,13 +54,15 @@ export default function LoginPage() {
     setCarregando(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      // Aponta para /api/auth e envia regioes como array vazio por padrão
+      const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nome: nomeCadastro,
           usuario: usuarioCadastro,
           senha: senhaCadastro,
+          regioes: [],
         }),
       });
 

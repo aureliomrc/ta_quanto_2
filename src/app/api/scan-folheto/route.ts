@@ -25,9 +25,7 @@ export async function POST(req: Request) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
-      } catch (err) {
-        console.warn('Scan executado sem usuário logado.');
-      }
+      } catch {}
     }
 
     const body = await req.json();
@@ -39,13 +37,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    // Configuração de resposta ultra-rápida
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-3.6-flash',
+      generationConfig: {
+        temperature: 0,
+      },
+    });
+
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise este folheto do mercado ${mercado}.
-Extraia todos os produtos com seus preços.
-Retorne EXCLUSIVAMENTE um array JSON puro:
-[{"produto": "Nome do Produto", "preco": 10.50}]`;
+    const prompt = `Extraia produtos e preços deste folheto do mercado ${mercado}. Retorne apenas o array JSON puro: [{"produto":"nome","preco":0.00}]`;
 
     const result = await model.generateContent([
       prompt,
@@ -58,42 +60,36 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
     try {
       const jsonStart = rawText.indexOf('[');
       const jsonEnd = rawText.lastIndexOf(']') + 1;
-      const cleanJson = rawText.substring(jsonStart, jsonEnd);
-      ofertasExtraidas = JSON.parse(cleanJson);
+      ofertasExtraidas = JSON.parse(rawText.substring(jsonStart, jsonEnd));
     } catch (e) {
-      return NextResponse.json({ error: 'Erro ao interpretar resposta da IA.' }, { status: 422 });
+      return NextResponse.json({ error: 'Erro ao formatar ofertas.' }, { status: 422 });
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
+      return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
     }
 
-    const ofertasSalvas = [];
-    for (const item of ofertasExtraidas) {
-      const precoNum = parseFloat(String(item.preco).replace(',', '.')) || 0;
-      try {
-        const novaOferta = await prisma.oferta.create({
-          data: {
-            mercado,
-            regiao: regiaoEnum,
-            produto: item.produto || 'Produto Sem Nome',
-            preco: precoNum,
-            usuarioId: usuarioId,
-          },
-        });
-        ofertasSalvas.push(novaOferta);
-      } catch (dbErr) {
-        console.error('Erro ao gravar oferta:', dbErr);
-      }
-    }
+    // Preparação dos dados para inserção rápida no banco
+    const dadosParaInserir = ofertasExtraidas.map((item) => ({
+      mercado,
+      regiao: regiaoEnum,
+      produto: item.produto || 'Produto Sem Nome',
+      preco: parseFloat(String(item.preco).replace(',', '.')) || 0,
+      usuarioId: usuarioId,
+    }));
+
+    // Inserção em massa ultrarrápida no Postgres (Neon)
+    await prisma.oferta.createMany({
+      data: dadosParaInserir,
+    });
 
     return NextResponse.json({
       success: true,
-      totalProcessados: ofertasSalvas.length,
-      itens: ofertasSalvas,
+      totalProcessados: dadosParaInserir.length,
+      itens: dadosParaInserir,
     });
   } catch (error: any) {
     console.error('Erro no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro ao processar folheto.' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Erro no processamento.' }, { status: 500 });
   }
 }

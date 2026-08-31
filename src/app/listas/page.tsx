@@ -1,271 +1,161 @@
 'use client';
-import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
-interface Item {
-  id: string;
-  nome: string;
-  quantidade: number;
-  comprado: boolean;
-}
-
-interface Lista {
-  id: string;
-  nome: string;
-  isPadrao?: boolean;
-  itens: Item[];
-}
+import { useState, useEffect } from 'react';
 
 export default function ListasPage() {
-  const router = useRouter();
+  const [listas, setListas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [nomeNovaLista, setNomeNovaLista] = useState('');
+  const [novoItem, setNovoItem] = useState('');
+  const [listaSelecionadaId, setListaSelecionadaId] = useState<string | null>(null);
 
-  // Lista Padrão Genérica pré-preenchida para todos os logins
-  const [listas, setListas] = useState<Lista[]>([
-    {
-      id: 'padrao',
-      nome: 'COMPRAS DO MÊS (PADRÃO)',
-      isPadrao: true,
-      itens: [
-        { id: 'p1', nome: 'Arroz 5kg', quantidade: 1, comprado: false },
-        { id: 'p2', nome: 'Feijão Carioca 1kg', quantidade: 2, comprado: false },
-        { id: 'p3', nome: 'Óleo de Soja 900ml', quantidade: 2, comprado: false },
-        { id: 'p4', nome: 'Leite Integral 1L', quantidade: 6, comprado: false },
-        { id: 'p5', nome: 'Açúcar Refinado 1kg', quantidade: 1, comprado: false },
-        { id: 'p6', nome: 'Café Torrado 500g', quantidade: 2, comprado: false },
-        { id: 'p7', nome: 'Sabão em Pó 1kg', quantidade: 1, comprado: false },
-      ],
-    },
-  ]);
+  // 1. Recarrega as listas do banco Neon sempre que a tela é aberta
+  const carregarListas = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/listas', {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setListas(data.listas || []);
+        // Seleciona a primeira lista por padrão caso não haja nenhuma selecionada
+        if (data.listas.length > 0 && !listaSelecionadaId) {
+          setListaSelecionadaId(data.listas[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar listas:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const [novaListaNome, setNovaListaNome] = useState('');
-  const [listaAberta, setListaAberta] = useState<string | null>('padrao');
-  const [novoItemNome, setNovoItemNome] = useState<{ [key: string]: string }>({});
+  useEffect(() => {
+    carregarListas();
+  }, []);
 
-  // Criar nova lista personalizada
-  const handleCriarLista = (e: React.FormEvent) => {
+  // 2. Criar Nova Lista e atualizar estado local + banco
+  const criarLista = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novaListaNome.trim()) return;
-    const nova: Lista = {
-      id: Date.now().toString(),
-      nome: novaListaNome.toUpperCase(),
-      itens: [],
-    };
-    setListas([...listas, nova]);
-    setListaAberta(nova.id);
-    setNovaListaNome('');
+    if (!nomeNovaLista.trim()) return;
+
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/listas', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ nomeNovaLista }),
+    });
+
+    const data = await res.json();
+    if (data.success && data.lista) {
+      setNomeNovaLista('');
+      await carregarListas(); // Recarrega todas do banco
+      setListaSelecionadaId(data.lista.id);
+    }
   };
 
-  // Adicionar item em qualquer lista
-  const handleAdicionarItem = (listaId: string) => {
-    const nome = novoItemNome[listaId];
-    if (!nome || !nome.trim()) return;
+  // 3. Adicionar Item na Lista selecionada
+  const adicionarItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoItem.trim() || !listaSelecionadaId) return;
 
-    setListas(prev =>
-      prev.map(l => {
-        if (l.id === listaId) {
-          return {
-            ...l,
-            itens: [...l.itens, { id: Date.now().toString(), nome: nome.trim(), quantidade: 1, comprado: false }],
-          };
-        }
-        return l;
-      })
-    );
-    setNovoItemNome({ ...novoItemNome, [listaId]: '' });
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/listas', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({
+        listaId: listaSelecionadaId,
+        nomeItem: novoItem,
+        quantidade: 1,
+      }),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      setNovoItem('');
+      await carregarListas(); // Sincroniza com o Neon
+    }
   };
 
-  // Alternar checkbox (colocado no carrinho)
-  const toggleComprado = (listaId: string, itemId: string) => {
-    setListas(prev =>
-      prev.map(l => {
-        if (l.id === listaId) {
-          return {
-            ...l,
-            itens: l.itens.map(i => (i.id === itemId ? { ...i, comprado: !i.comprado } : i)),
-          };
-        }
-        return l;
-      })
-    );
-  };
-
-  // Alterar Quantidade (+ / -)
-  const alterarQuantidade = (listaId: string, itemId: string, delta: number) => {
-    setListas(prev =>
-      prev.map(l => {
-        if (l.id === listaId) {
-          return {
-            ...l,
-            itens: l.itens.map(i => {
-              if (i.id === itemId) {
-                const q = i.quantidade + delta;
-                return { ...i, quantidade: q > 0 ? q : 1 };
-              }
-              return i;
-            }),
-          };
-        }
-        return l;
-      })
-    );
-  };
+  if (loading) return <div className="p-8 text-center">Carregando listas...</div>;
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] flex flex-col justify-between pb-20">
-      {/* Topo Header */}
-      <header className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm sticky top-0 z-10">
-        <div className="flex items-center gap-2 text-lg font-black text-[#008744]">
-          <span>🛒</span> TÁ QUANTO?
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              localStorage.removeItem('token');
-              router.push('/login');
-            }}
-            className="text-xs font-bold text-red-500 hover:underline"
-          >
-            Sair
-          </button>
-        </div>
-      </header>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Minhas Listas</h1>
 
-      {/* Conteúdo Central */}
-      <main className="flex-1 max-w-lg w-full mx-auto p-4 space-y-6">
-        {/* Card Criar Lista */}
-        <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 space-y-3">
-          <div className="flex items-center gap-2 font-bold text-sm text-gray-700">
-            <span className="text-lg">+</span> Nova Lista de Compras
-          </div>
-          <form onSubmit={handleCriarLista} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="EX: MENSAL, CHURRASCO..."
-              value={novaListaNome}
-              onChange={e => setNovaListaNome(e.target.value)}
-              className="flex-1 border border-gray-200 rounded-2xl px-4 py-2.5 text-xs font-semibold focus:outline-none"
-            />
+      {/* Formulário Criar Lista */}
+      <form onSubmit={criarLista} className="flex gap-2 mb-6">
+        <input
+          type="text"
+          placeholder="Nome da nova lista..."
+          value={nomeNovaLista}
+          onChange={(e) => setNomeNovaLista(e.target.value)}
+          className="border p-2 rounded w-full"
+        />
+        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
+          Criar Lista
+        </button>
+      </form>
+
+      {/* Exibição das Listas */}
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="border p-4 rounded bg-gray-50">
+          <h2 className="font-semibold mb-2">Suas Listas</h2>
+          {listas.map((l) => (
             <button
-              type="submit"
-              className="bg-[#1877f2] hover:bg-[#166fe5] text-white text-xs font-bold px-5 py-2.5 rounded-2xl transition"
+              key={l.id}
+              onClick={() => setListaSelecionadaId(l.id)}
+              className={`block w-full text-left p-2 rounded mb-1 ${
+                listaSelecionadaId === l.id ? 'bg-blue-100 font-bold' : 'hover:bg-gray-200'
+              }`}
             >
-              + Criar
+              {l.nome} ({l.itens?.length || 0})
             </button>
-          </form>
+          ))}
         </div>
 
-        {/* Listas do Usuário */}
-        <div className="space-y-4">
-          <span className="text-xs font-bold text-gray-400 tracking-wider">
-            SUAS LISTAS ({listas.length})
-          </span>
+        {/* Itens da Lista Selecionada */}
+        <div className="md:col-span-2 border p-4 rounded">
+          {listaSelecionadaId ? (
+            <>
+              <form onSubmit={adicionarItem} className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  placeholder="Adicionar produto..."
+                  value={novoItem}
+                  onChange={(e) => setNovoItem(e.target.value)}
+                  className="border p-2 rounded w-full"
+                />
+                <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+                  Adicionar
+                </button>
+              </form>
 
-          {listas.map(lista => {
-            const aberta = listaAberta === lista.id;
-            return (
-              <div key={lista.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {/* Cabeçalho da Lista */}
-                <div
-                  onClick={() => setListaAberta(aberta ? null : lista.id)}
-                  className="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">📁</span>
-                    <span className="font-extrabold text-sm text-gray-800">{lista.nome}</span>
-                    <span className="bg-blue-50 text-[#1877f2] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      {lista.itens.length} itens
-                    </span>
-                  </div>
-                  <span className="text-gray-400 text-xs">{aberta ? '▲' : '▼'}</span>
-                </div>
-
-                {/* Conteúdo Expansível da Lista */}
-                {aberta && (
-                  <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-4">
-                    {/* Formulário para Adicionar Produto nesta Lista */}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Adicionar novo produto..."
-                        value={novoItemNome[lista.id] || ''}
-                        onChange={e => setNovoItemNome({ ...novoItemNome, [lista.id]: e.target.value })}
-                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none bg-white"
-                      />
-                      <button
-                        onClick={() => handleAdicionarItem(lista.id)}
-                        className="bg-[#008744] text-white text-xs font-bold px-3 py-2 rounded-xl"
-                      >
-                        + Add
-                      </button>
-                    </div>
-
-                    {/* Itens da Lista */}
-                    <ul className="space-y-2">
-                      {lista.itens.map(item => (
-                        <li
-                          key={item.id}
-                          className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-gray-100"
-                        >
-                          <label className="flex items-center gap-3 cursor-pointer flex-1">
-                            <input
-                              type="checkbox"
-                              checked={item.comprado}
-                              onChange={() => toggleComprado(lista.id, item.id)}
-                              className="w-4 h-4 accent-[#008744] rounded cursor-pointer"
-                            />
-                            <span
-                              className={`text-xs font-bold ${
-                                item.comprado ? 'line-through text-gray-400' : 'text-gray-700'
-                              }`}
-                            >
-                              {item.nome}
-                            </span>
-                          </label>
-
-                          {/* Seletor de Quantidade */}
-                          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                            <button
-                              onClick={() => alterarQuantidade(lista.id, item.id, -1)}
-                              className="px-2 py-0.5 text-xs font-bold text-gray-600 hover:bg-gray-200"
-                            >
-                              -
-                            </button>
-                            <span className="px-2 text-xs font-bold text-gray-800">{item.quantidade}</span>
-                            <button
-                              onClick={() => alterarQuantidade(lista.id, item.id, 1)}
-                              className="px-2 py-0.5 text-xs font-bold text-gray-600 hover:bg-gray-200"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              <ul>
+                {listas
+                  .find((l) => l.id === listaSelecionadaId)
+                  ?.itens?.map((item: any) => (
+                    <li key={item.id} className="p-2 border-b flex justify-between">
+                      <span>{item.nome}</span>
+                      <span className="text-sm text-gray-500">Qtd: {item.quantidade}</span>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-gray-500">Selecione ou crie uma lista para ver os itens.</p>
+          )}
         </div>
-      </main>
-
-      {/* Navegação Inferior */}
-      <nav className="bg-white border-t border-gray-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
-        <Link href="/listas" className="flex flex-col items-center text-[#008744]">
-          <span className="text-xl">📋</span>
-          <span className="text-xs font-bold mt-1">Listas</span>
-        </Link>
-        {/* Botão Comparar agora abre diretamente a câmera e o scanner */}
-        <Link href="/scanner" className="flex flex-col items-center text-gray-400 hover:text-[#008744]">
-          <span className="text-xl">📷</span>
-          <span className="text-xs font-bold mt-1">Comparar (Folheto)</span>
-        </Link>
-        <Link href="/historico" className="flex flex-col items-center text-gray-400 hover:text-[#008744]">
-          <span className="text-xl">📜</span>
-          <span className="text-xs font-bold mt-1">Histórico</span>
-        </Link>
-      </nav>
+      </div>
     </div>
   );
 }

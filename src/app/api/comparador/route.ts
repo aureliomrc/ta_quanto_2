@@ -36,15 +36,15 @@ export async function POST(req: Request) {
 
     const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
     
-    // Modelo exato suportado pela sua chave/API Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // Atualizado estritamente para o modelo solicitado
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const result = await model.generateContent([prompt, ...imageParts]);
 
     const responseText = result.response.text();
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
 
-    // Persistência na tabela 'Oferta'
+    // Persistência direta na tabela 'Oferta'
     if (Array.isArray(produtos) && produtos.length > 0) {
       const prismaAny = prisma as any;
       await prismaAny.oferta.createMany({

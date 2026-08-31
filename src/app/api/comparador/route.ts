@@ -24,22 +24,18 @@ export async function POST(req: Request) {
     const { imageBase64, mercado, regiao } = await req.json();
 
     if (!imageBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Chave GEMINI_API_KEY não encontrada no servidor.' }, { status: 500 });
+      return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
     const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise a imagem deste folheto de ofertas e extraia os produtos com seus preços. 
-    Retorne EXCLUSIVAMENTE um array JSON no padrão: [{"produto": "Nome do Produto", "preco": 10.90}]`;
+    const prompt = `Analise a imagem deste folheto e extraia os produtos com seus preços. 
+    Retorne EXCLUSIVAMENTE um array JSON no padrão: [{"produto": "Arroz 5kg", "preco": 24.90}]`;
 
     const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
-    const modelos = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash-exp'];
+    const modelos = ['gemini-2.0-flash', 'gemini-1.5-flash-latest'];
     
     let result = null;
     let ultimoErro = null;
@@ -49,45 +45,36 @@ export async function POST(req: Request) {
         const model = genAI.getGenerativeModel({ model: nomeModelo });
         result = await model.generateContent([prompt, ...imageParts]);
         if (result) break;
-      } catch (err: any) {
+      } catch (err) {
         ultimoErro = err;
       }
     }
 
     if (!result) {
-      throw ultimoErro || new Error('Servidores de IA indisponíveis.');
+      throw ultimoErro || new Error('IA indisponível.');
     }
 
     const responseText = result.response.text();
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
 
-    // Persiste no banco Prisma compartilhado
+    // Salva diretamente na tabela 'Oferta' para ficar disponível no banco
     if (produtos.length > 0) {
       const prismaAny = prisma as any;
-      if (prismaAny.historicoFolheto) {
-        await prismaAny.historicoFolheto.create({
-          data: {
-            usuarioId: usuarioId || null,
-            mercado: mercado || 'Não informado',
-            regiao: regiao || 'SUDESTE',
-            itens: {
-              create: produtos.map((p) => ({
-                produto: String(p.produto).toUpperCase(),
-                preco: Number(p.preco),
-              })),
-            },
-          },
-        });
-      }
+      await prismaAny.oferta.createMany({
+        data: produtos.map((p) => ({
+          produto: String(p.produto).toUpperCase(),
+          preco: Number(p.preco),
+          mercado: mercado || 'Geral',
+          regiao: regiao || 'SUDESTE',
+          usuarioId: usuarioId || null,
+        })),
+      });
     }
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro no processamento:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Erro ao processar imagem.' },
-      { status: 500 }
-    );
+    console.error('Erro ao processar e salvar oferta:', error);
+    return NextResponse.json({ error: error?.message || 'Erro ao processar imagem.' }, { status: 500 });
   }
 }

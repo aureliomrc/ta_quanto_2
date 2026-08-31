@@ -3,12 +3,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
-interface ComparativoMercado {
-  mercado: string;
-  total: number;
-  itensDetalhes: { produto: string; preco: number; fonte: 'FOLHETO' | 'MÉDIA SEFAZ' }[];
-}
-
 export default function CotacaoPrecosPage() {
   const [mercado, setMercado] = useState('Assaí');
   const [regiao, setRegiao] = useState('SUDESTE');
@@ -16,7 +10,6 @@ export default function CotacaoPrecosPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [streamAtivo, setStreamAtivo] = useState(false);
-  const [comparativoMercados, setComparativoMercados] = useState<ComparativoMercado[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -88,7 +81,7 @@ export default function CotacaoPrecosPage() {
     const token = localStorage.getItem('token');
 
     setCarregando(true);
-    setMensagem('Analisando ofertas e salvando no banco público...');
+    setMensagem('Analisando ofertas e salvando no banco de dados...');
 
     try {
       const res = await fetch('/api/comparador', {
@@ -103,9 +96,8 @@ export default function CotacaoPrecosPage() {
       const data = await res.json();
 
       if (res.ok && data.result) {
-        setMensagem(`✅ Oferta salva com sucesso no banco de dados!`);
+        setMensagem(`✅ Sucesso! ${data.result.length} item(ns) gravado(s) no banco!`);
         setImagemBase64(null);
-        gerarComparativo(data.result);
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
@@ -114,32 +106,6 @@ export default function CotacaoPrecosPage() {
     } finally {
       setCarregando(false);
     }
-  };
-
-  const gerarComparativo = (itensBipados: { produto: string; preco: number }[]) => {
-    const mercadosDaRegiao = [mercado, 'Atacadão', 'Carrefour'];
-    
-    const resultado = mercadosDaRegiao.map((m) => {
-      let total = 0;
-      const detalhes = itensBipados.map((item) => {
-        let precoFinal = item.preco;
-        let fonte: 'FOLHETO' | 'MÉDIA SEFAZ' = 'FOLHETO';
-
-        if (m !== mercado) {
-          const variacao = (Math.random() * 0.2 - 0.1);
-          precoFinal = Number((item.preco * (1 + variacao)).toFixed(2));
-          fonte = Math.random() > 0.4 ? 'FOLHETO' : 'MÉDIA SEFAZ';
-        }
-
-        total += precoFinal;
-        return { produto: item.produto, preco: precoFinal, fonte };
-      });
-
-      return { mercado: m, total: Number(total.toFixed(2)), itensDetalhes: detalhes };
-    });
-
-    resultado.sort((a, b) => a.total - b.total);
-    setComparativoMercados(resultado);
   };
 
   return (
@@ -214,7 +180,7 @@ export default function CotacaoPrecosPage() {
                   disabled={carregando}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
                 >
-                  {carregando ? 'Processando...' : 'Analisar & Salvar'}
+                  {carregando ? 'Gravando no Banco...' : 'Analisar & Salvar'}
                 </button>
               </div>
             </div>
@@ -268,64 +234,6 @@ export default function CotacaoPrecosPage() {
             {mensagem}
           </div>
         )}
-
-        {comparativoMercados.length > 0 && (
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-              📊 Onde sua compra sai mais barata ({regiao})
-            </h2>
-
-            <div className="space-y-2">
-              {comparativoMercados.map((item, index) => (
-                <div
-                  key={index}
-                  className={`p-3 rounded-xl border ${
-                    index === 0
-                      ? 'bg-emerald-50 border-emerald-300'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-xs text-slate-800">
-                        {index === 0 ? '🏆 ' : ''}
-                        {item.mercado}
-                      </span>
-                      {index === 0 && (
-                        <span className="ml-2 text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full">
-                          Mais Barato
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-black text-sm text-emerald-700">
-                      R$ {item.total.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 text-[11px] space-y-1 divide-y divide-slate-100">
-                    {item.itensDetalhes.map((det, dIdx) => (
-                      <div key={dIdx} className="pt-1 flex justify-between text-slate-600">
-                        <span>{det.produto}</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-semibold">R$ {det.preco.toFixed(2)}</span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded ${
-                              det.fonte === 'FOLHETO'
-                                ? 'bg-blue-100 text-blue-700 font-bold'
-                                : 'bg-amber-100 text-amber-700 font-bold'
-                            }`}
-                          >
-                            {det.fonte}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
@@ -336,7 +244,7 @@ export default function CotacaoPrecosPage() {
           <span>🏷️</span> Cotação
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>📜</span> Histórico
+          <span>📊</span> Comparação/Histórico
         </Link>
       </nav>
     </div>

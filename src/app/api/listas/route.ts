@@ -1,77 +1,42 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const ITENS_PADRAO = [
+  { nome: 'Arroz 5kg', quantidade: 1 },
+  { nome: 'Feijão Carioca 1kg', quantidade: 2 },
+  { nome: 'Óleo de Soja 900ml', quantidade: 2 },
+  { nome: 'Açúcar Refinado 1kg', quantidade: 1 },
+  { nome: 'Café Torrado 500g', quantidade: 1 },
+  { nome: 'Leite Integral 1L', quantidade: 6 },
+  { nome: 'Macarrão Espaguete 500g', quantidade: 2 },
+  { nome: 'Detergente Líquido', quantidade: 3 },
+  { nome: 'Sabão em Pó 1kg', quantidade: 1 },
+  { nome: 'Papel Higiênico (12 un)', quantidade: 1 },
+];
 
-function getUserId(req: Request) {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader) return null;
+export async function GET() {
   try {
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    return decoded.id;
-  } catch {
-    return null;
-  }
-}
+    const prismaAny = prisma as any;
 
-export async function GET(req: Request) {
-  try {
-    const usuarioId = getUserId(req);
-    if (!usuarioId) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-
-    // Busca ou cria a Lista Padrão para o usuário logado se não existir
-    let listaPadrao = await prisma.lista.findFirst({
-      where: { usuarioId, nome: 'LISTA PADRÃO' },
-    });
-
-    if (!listaPadrao) {
-      listaPadrao = await prisma.lista.create({
-        data: { nome: 'LISTA PADRÃO', usuarioId },
-      });
-    }
-
-    // Traz as listas do usuário com seus respectivos itens
-    const listas = await prisma.lista.findMany({
-      where: { usuarioId },
-      include: {
-        itens: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return NextResponse.json(listas);
-  } catch (error) {
-    console.error('Erro ao buscar listas:', error);
-    return NextResponse.json({ error: 'Erro ao carregar listas' }, { status: 500 });
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const usuarioId = getUserId(req);
-    if (!usuarioId) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-
-    const { nome } = await req.json();
-    if (!nome) {
-      return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 });
-    }
-
-    const novaLista = await prisma.lista.create({
-      data: {
-        nome: nome.toUpperCase(),
-        usuarioId,
-      },
+    let lista = await prismaAny.lista.findFirst({
       include: { itens: true },
     });
 
-    return NextResponse.json(novaLista, { status: 201 });
+    if (!lista) {
+      lista = await prismaAny.lista.create({
+        data: {
+          nome: 'Minha Lista de Compras',
+          itens: {
+            create: ITENS_PADRAO,
+          },
+        },
+        include: { itens: true },
+      });
+    }
+
+    return NextResponse.json(lista);
   } catch (error) {
-    return NextResponse.json({ error: 'Erro ao criar lista' }, { status: 500 });
+    console.error('Erro na API de listas:', error);
+    return NextResponse.json({ error: 'Erro ao carregar listas' }, { status: 500 });
   }
 }

@@ -4,19 +4,13 @@ import { prisma } from '@/lib/prisma';
 export async function GET() {
   try {
     const prismaAny = prisma as any;
+    const ofertas = await prismaAny.oferta.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
 
-    if (prismaAny.historicoFolheto) {
-      // Busca todos os folhetos do banco de dados (sem filtrar por usuarioId)
-      const historicos = await prismaAny.historicoFolheto.findMany({
-        include: { itens: true },
-        orderBy: { createdAt: 'desc' },
-      });
-      return NextResponse.json(historicos);
-    }
-
-    return NextResponse.json([]);
+    return NextResponse.json(ofertas);
   } catch (error) {
-    console.error('Erro ao buscar histórico publico:', error);
-    return NextResponse.json([], { status: 500 });
+    console.error('Erro ao buscar ofertas:', error);
+    return NextResponse.json([], { status: 200 });
   }
 }

@@ -25,7 +25,7 @@ export default function ListasPage() {
   const [carregando, setCarregando] = useState(true);
   const [criandoLista, setCriandoLista] = useState(false);
 
-  const carregarListas = async (selecionarNovaId?: string) => {
+  const carregarListas = async (selecionarId?: string) => {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/listas', {
@@ -36,8 +36,8 @@ export default function ListasPage() {
         const data: ListaData[] = await res.json();
         setListas(data);
 
-        if (selecionarNovaId) {
-          setListaAtivaId(selecionarNovaId);
+        if (selecionarId) {
+          setListaAtivaId(selecionarId);
         } else if (data.length > 0 && (!listaAtivaId || !data.some((l) => l.id === listaAtivaId))) {
           setListaAtivaId(data[0].id);
         }
@@ -89,8 +89,8 @@ export default function ListasPage() {
     if (e) e.preventDefault();
     if (!listaAtual) return;
 
-    const nomeParaAdicionar = payload.nomeItem || novoItemNome;
-    if (acao === 'ADD_ITEM' && !nomeParaAdicionar.trim()) return;
+    const textoAdicionar = payload.nomeItem || novoItemNome;
+    if (acao === 'ADD_ITEM' && !textoAdicionar.trim()) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -103,7 +103,7 @@ export default function ListasPage() {
         body: JSON.stringify({
           listaId: listaAtual.id,
           acao,
-          nomeItem: nomeParaAdicionar,
+          nomeItem: textoAdicionar,
           ...payload,
         }),
       });
@@ -114,7 +114,7 @@ export default function ListasPage() {
         await carregarListas(listaRetornada.id);
       }
     } catch (err) {
-      console.error('Erro na ação do item:', err);
+      console.error('Erro ao processar item:', err);
     }
   };
 
@@ -200,7 +200,7 @@ export default function ListasPage() {
           </div>
         )}
 
-        {/* Adicionar Produto na Lista Ativa */}
+        {/* Form Adicionar Produto */}
         <form
           onSubmit={(e) => handleAcaoItem(e, 'ADD_ITEM')}
           className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2"
@@ -220,7 +220,7 @@ export default function ListasPage() {
           </button>
         </form>
 
-        {/* Exibição dos Itens da Lista Ativa */}
+        {/* Lista Ativa e Itens */}
         {carregando ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-500 shadow-sm">
             Carregando lista...
@@ -238,7 +238,7 @@ export default function ListasPage() {
                 </h2>
                 {listaAtual.usuarioId === null && (
                   <span className="text-[9px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                    Padrão Global (Qualquer edição criará sua versão)
+                    Padrão Global (Edições criarão sua versão)
                   </span>
                 )}
               </div>
@@ -248,6 +248,7 @@ export default function ListasPage() {
                 </span>
                 {listaAtual.usuarioId !== null && (
                   <button
+                    type="button"
                     onClick={handleExcluirLista}
                     className="text-red-500 hover:text-red-700 text-xs font-bold px-1"
                     title="Excluir Lista"

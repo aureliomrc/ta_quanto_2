@@ -23,7 +23,7 @@ const ITENS_DIEESE = [
 
 function getUserId(req: Request) {
   const authHeader = req.headers.get('authorization');
-  if (!authHeader) return null;
+  if (!authHeader || authHeader === 'Bearer null' || authHeader === 'Bearer undefined') return null;
   try {
     const token = authHeader.replace('Bearer ', '');
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
@@ -38,25 +38,21 @@ export async function GET(req: Request) {
     const usuarioId = getUserId(req);
     const prismaAny = prisma as any;
 
-    // Busca listas do usuário e a Lista Dieese padrão
-    let listas = await prismaAny.lista.findMany({
-      where: usuarioId ? { OR: [{ usuarioId }, { usuarioId: null }] } : { usuarioId: null },
-      include: { itens: true },
-      orderBy: { createdAt: 'asc' },
+    // 1. LIMPEZA AUTOMÁTICA: Remove qualquer lista antiga global sem dono que NÃO SEJA a "Lista Dieese"
+    await prismaAny.lista.deleteMany({
+      where: {
+        usuarioId: null,
+        nome: { not: 'Lista Dieese' },
+      },
     });
 
-    // Se o usuário já tiver a versão própria da Lista Dieese, oculta a Lista Dieese global para ele
-    const temListaDieeseUsuario = listas.some(
-      (l: any) => l.usuarioId === usuarioId && l.nome.includes('Dieese')
-    );
+    // 2. Garante que a Lista Dieese Global exista
+    let listaDieeseGlobal = await prismaAny.lista.findFirst({
+      where: { nome: 'Lista Dieese', usuarioId: null },
+      include: { itens: true },
+    });
 
-    if (temListaDieeseUsuario && usuarioId) {
-      listas = listas.filter((l: any) => !(l.usuarioId === null && l.nome === 'Lista Dieese'));
-    }
-
-    // Se a Lista Dieese global ainda não existir no banco, cria ela com os 14 itens
-    let listaDieeseGlobal = listas.find((l: any) => l.nome === 'Lista Dieese' && l.usuarioId === null);
-    if (!listaDieeseGlobal && !temListaDieeseUsuario) {
+    if (!listaDieeseGlobal) {
       listaDieeseGlobal = await prismaAny.lista.create({
         data: {
           nome: 'Lista Dieese',
@@ -67,7 +63,23 @@ export async function GET(req: Request) {
         },
         include: { itens: true },
       });
-      listas.unshift(listaDieeseGlobal);
+    }
+
+    // 3. Busca listas
+    let listas = await prismaAny.lista.findMany({
+      where: usuarioId ? { OR: [{ usuarioId }, { usuarioId: null }] } : { usuarioId: null },
+      include: { itens: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Se o usuário tem uma versão própria da Lista Dieese, remove a versão global da visualização dele
+    if (usuarioId) {
+      const temVersaoPropria = listas.some(
+        (l: any) => l.usuarioId === usuarioId && l.nome.includes('Dieese')
+      );
+      if (temVersaoPropria) {
+        listas = listas.filter((l: any) => !(l.usuarioId === null && l.nome === 'Lista Dieese'));
+      }
     }
 
     return NextResponse.json(listas);
@@ -84,17 +96,16 @@ export async function GET(req: Request) {
   }
 }
 
-// Criar Nova Lista do Usuário
 export async function POST(req: Request) {
   try {
-    const usuarioId = getUserId(req);
+    const usuarioId = getUserId(req) || 'guest-user';
     const { nome } = await req.json();
     const prismaAny = prisma as any;
 
     const novaLista = await prismaAny.lista.create({
       data: {
         nome: nome || 'Minha Lista',
-        usuarioId: usuarioId || null,
+        usuarioId,
       },
       include: { itens: true },
     });
@@ -106,10 +117,9 @@ export async function POST(req: Request) {
   }
 }
 
-// Ações na Lista: Adicionar item, Modificar Qtd, Excluir Item
 export async function PUT(req: Request) {
   try {
-    const usuarioId = getUserId(req);
+    const usuarioId = getUserId(req) || 'guest-user';
     const { listaId, acao, itemId, nomeItem, quantidade } = await req.json();
     const prismaAny = prisma as any;
 
@@ -122,25 +132,38 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Lista não encontrada' }, { status: 404 });
     }
 
-    // AO EDITAR A LISTA DIEESE GLOBAL: Cria a cópia do usuário e substitui a original no painel dele
-    if (targetLista.usuarioId === null && targetLista.nome === 'Lista Dieese' && usuarioId) {
+    // SE ESTIVER NAVEGANDO NA LISTA DIEESE GLOBAL E EDITAR:
+    // Transforma essa alteração em uma NOVA LISTA do usuário imediatamente
+    if (targetLista.usuarioId === null && targetLista.nome === 'Lista Dieese') {
+      const novosItens = (targetLista.itens || []).map((i: any) => ({
+        nome: i.nome || i.produto || i.descricao,
+        quantidade: i.quantidade || 1,
+      }));
+
+      // Se a ação for adicionar item, adiciona ao payload da nova lista
+      if (acao === 'ADD_ITEM' && nomeItem) {
+        novosItens.push({ nome: nomeItem, quantidade: 1 });
+      }
+
       targetLista = await prismaAny.lista.create({
         data: {
           nome: 'Lista Dieese (Minha Versão)',
           usuarioId,
           itens: {
-            create: targetLista.itens.map((i: any) => ({
-              nome: i.nome || i.produto || i.descricao,
-              quantidade: i.quantidade || 1,
-            })),
+            create: novosItens,
           },
         },
         include: { itens: true },
       });
+
+      // Se já adicionou no array ao criar a lista, retorna direto
+      if (acao === 'ADD_ITEM') {
+        return NextResponse.json(targetLista);
+      }
     }
 
-    // Executa a alteração na lista de destino
-    if (acao === 'ADD_ITEM') {
+    // Executa alterações para listas normais
+    if (acao === 'ADD_ITEM' && nomeItem) {
       await prismaAny.itemLista.create({
         data: {
           nome: nomeItem,
@@ -149,25 +172,15 @@ export async function PUT(req: Request) {
           usuarioId: targetLista.usuarioId,
         },
       });
-    } else if (acao === 'UPDATE_QTD') {
-      const targetItemId =
-        targetLista.itens.find((i: any) => i.id === itemId)?.id || targetLista.itens[0]?.id;
-
-      if (targetItemId) {
-        await prismaAny.itemLista.update({
-          where: { id: targetItemId },
-          data: { quantidade: Math.max(1, quantidade) },
-        });
-      }
-    } else if (acao === 'DELETE_ITEM') {
-      const targetItemId =
-        targetLista.itens.find((i: any) => i.id === itemId)?.id || targetLista.itens[0]?.id;
-
-      if (targetItemId) {
-        await prismaAny.itemLista.delete({
-          where: { id: targetItemId },
-        });
-      }
+    } else if (acao === 'UPDATE_QTD' && itemId) {
+      await prismaAny.itemLista.update({
+        where: { id: itemId },
+        data: { quantidade: Math.max(1, quantidade) },
+      });
+    } else if (acao === 'DELETE_ITEM' && itemId) {
+      await prismaAny.itemLista.delete({
+        where: { id: itemId },
+      });
     }
 
     const listaAtualizada = await prismaAny.lista.findUnique({
@@ -182,7 +195,6 @@ export async function PUT(req: Request) {
   }
 }
 
-// Excluir Lista Inteira
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -196,7 +208,7 @@ export async function DELETE(req: Request) {
     const lista = await prismaAny.lista.findUnique({ where: { id: listaId } });
 
     if (lista && lista.usuarioId === null) {
-      return NextResponse.json({ error: 'A Lista Dieese global não pode ser excluída.' }, { status: 400 });
+      return NextResponse.json({ error: 'A Lista Dieese padrão global não pode ser excluída.' }, { status: 400 });
     }
 
     await prismaAny.itemLista.deleteMany({ where: { listaId } });

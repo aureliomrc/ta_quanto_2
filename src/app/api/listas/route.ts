@@ -17,6 +17,7 @@ export async function GET(req: Request) {
       } catch {}
     }
 
+    // Busca listas padrão (globais) + listas criadas pelo usuário logado
     const listas = await prisma.lista.findMany({
       where: {
         OR: [
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
       const novaLista = await prisma.lista.create({
         data: {
           nome: nomeNovaLista,
-          isPadrao: !usuarioId,
+          isPadrao: !usuarioId, // Se não tiver usuário logado, cria como lista padrão
           usuarioId: usuarioId,
         },
         include: {
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, lista: novaLista });
     }
 
-    // 2. Adicionar Item na Lista Exista
+    // 2. Adicionar Item na Lista (seja ela Padrão ou do Usuário)
     if (listaId && nomeItem) {
       const novoItem = await prisma.itemLista.create({
         data: {
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Envie nomeNovaLista para criar uma lista ou listaId + nomeItem para inserir um item.' },
+      { error: 'Dados incompletos. Envie nomeNovaLista ou listaId + nomeItem.' },
       { status: 400 }
     );
   } catch (err: any) {

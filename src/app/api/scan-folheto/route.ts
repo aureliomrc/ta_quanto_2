@@ -37,7 +37,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    // Configuração de resposta ultra-rápida
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.6-flash',
       generationConfig: {
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
 
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Extraia produtos e preços deste folheto do mercado ${mercado}. Retorne apenas o array JSON puro: [{"produto":"nome","preco":0.00}]`;
+    const prompt = `Analise este folheto do mercado ${mercado}. Extraia todos os produtos com seus preços. Retorne EXCLUSIVAMENTE um array JSON puro: [{"produto": "Nome do Produto", "preco": 10.50}]`;
 
     const result = await model.generateContent([
       prompt,
@@ -62,14 +61,13 @@ export async function POST(req: Request) {
       const jsonEnd = rawText.lastIndexOf(']') + 1;
       ofertasExtraidas = JSON.parse(rawText.substring(jsonStart, jsonEnd));
     } catch (e) {
-      return NextResponse.json({ error: 'Erro ao formatar ofertas.' }, { status: 422 });
+      return NextResponse.json({ error: 'Erro ao interpretar folheto.' }, { status: 422 });
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
       return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
     }
 
-    // Preparação dos dados para inserção rápida no banco
     const dadosParaInserir = ofertasExtraidas.map((item) => ({
       mercado,
       regiao: regiaoEnum,
@@ -78,7 +76,7 @@ export async function POST(req: Request) {
       usuarioId: usuarioId,
     }));
 
-    // Inserção em massa ultrarrápida no Postgres (Neon)
+    // Inserção em massa ultrarrápida no Neon
     await prisma.oferta.createMany({
       data: dadosParaInserir,
     });

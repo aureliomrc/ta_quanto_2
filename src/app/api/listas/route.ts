@@ -1,83 +1,194 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import jwt from 'jsonwebtoken';
 
-const ITENS_PADRAO = [
-  { id: 'std-1', nome: 'Arroz 5kg', quantidade: 1 },
-  { id: 'std-2', nome: 'Feijão Carioca 1kg', quantidade: 1 },
-  { id: 'std-3', nome: 'Óleo de Soja 900ml', quantidade: 1 },
-  { id: 'std-4', nome: 'Açúcar Refinado 1kg', quantidade: 1 },
-  { id: 'std-5', nome: 'Café Torrado 500g', quantidade: 1 },
-  { id: 'std-6', nome: 'Leite Integral 1L', quantidade: 1 },
-  { id: 'std-7', nome: 'Macarrão Espaguete 500g', quantidade: 1 },
-  { id: 'std-8', nome: 'Detergente Líquido', quantidade: 1 },
-  { id: 'std-9', nome: 'Sabão em Pó 1kg', quantidade: 1 },
-  { id: 'std-10', nome: 'Papel Higiênico (12 un)', quantidade: 1 },
+const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+
+const ITENS_DIEESE = [
+  'Arroz (3kg)',
+  'Feijão (4,5kg)',
+  'Carne Bovino (6kg)',
+  'Leite Integral (7,5L)',
+  'Pão Francês (6kg)',
+  'Mandioca/Batata (6kg)',
+  'Tomate (9kg)',
+  'Óleo de Soja (1 lata/refil)',
+  'Café em Pó (600g)',
+  'Açúcar Refinado (3kg)',
+  'Banana (9 dúzias)',
+  'Manteiga (750g)',
+  'Sabão em Pó (1kg)',
+  'Detergente Líquido (500ml)',
 ];
 
-export async function GET() {
+function getUserId(req: Request) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) return null;
   try {
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    return decoded.id;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const usuarioId = getUserId(req);
     const prismaAny = prisma as any;
 
-    let lista = await prismaAny.lista.findFirst({
+    // Busca listas do usuário e a lista padrão Dieese
+    let listas = await prismaAny.lista.findMany({
+      where: usuarioId ? { OR: [{ usuarioId }, { usuarioId: null }] } : { usuarioId: null },
+      include: { itens: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Se a Lista Dieese original não existir no banco, cria ela com os 14 itens
+    let listaDieese = listas.find((l: any) => l.nome === 'Lista Dieese' && l.usuarioId === null);
+
+    if (!listaDieese) {
+      listaDieese = await prismaAny.lista.create({
+        data: {
+          nome: 'Lista Dieese',
+          usuarioId: null,
+          itens: {
+            create: ITENS_DIEESE.map((nome) => ({ nome, quantidade: 1 })),
+          },
+        },
+        include: { itens: true },
+      });
+      listas.unshift(listaDieese);
+    }
+
+    return NextResponse.json(listas);
+  } catch (error) {
+    console.error('Erro ao buscar listas:', error);
+    return NextResponse.json([
+      {
+        id: 'dieese-default',
+        nome: 'Lista Dieese',
+        itens: ITENS_DIEESE.map((nome, i) => ({ id: `d-${i}`, nome, quantidade: 1 })),
+      },
+    ]);
+  }
+}
+
+// Criar Nova Lista Própria
+export async function POST(req: Request) {
+  try {
+    const usuarioId = getUserId(req);
+    const { nome } = await req.json();
+    const prismaAny = prisma as any;
+
+    const novaLista = await prismaAny.lista.create({
+      data: {
+        nome: nome || 'Nova Lista',
+        usuarioId: usuarioId || null,
+      },
       include: { itens: true },
     });
 
-    if (!lista) {
-      lista = await prismaAny.lista.create({
-        data: { nome: 'Minha Lista de Compras' },
+    return NextResponse.json(novaLista);
+  } catch (error) {
+    console.error('Erro ao criar lista:', error);
+    return NextResponse.json({ error: 'Erro ao criar lista' }, { status: 500 });
+  }
+}
+
+// Manipulação de Itens da Lista (Adicionar, Alterar Qtd, Excluir Item)
+export async function PUT(req: Request) {
+  try {
+    const usuarioId = getUserId(req);
+    const { listaId, acao, itemId, nomeItem, quantidade } = await req.json();
+    const prismaAny = prisma as any;
+
+    let targetLista = await prismaAny.lista.findUnique({
+      where: { id: listaId },
+      include: { itens: true },
+    });
+
+    if (!targetLista) {
+      return NextResponse.json({ error: 'Lista não encontrada' }, { status: 404 });
+    }
+
+    // SE A LISTA FOR A "LISTA DIEESE" PADRÃO E O USUÁRIO EDITAR, CRIA UMA CÓPIA PARA ELE (FORK)
+    if (targetLista.usuarioId === null && targetLista.nome === 'Lista Dieese' && usuarioId) {
+      targetLista = await prismaAny.lista.create({
+        data: {
+          nome: 'Lista Dieese (Minha Versão)',
+          usuarioId,
+          itens: {
+            create: targetLista.itens.map((i: any) => ({
+              nome: i.nome || i.produto,
+              quantidade: i.quantidade,
+            })),
+          },
+        },
         include: { itens: true },
       });
     }
 
-    const itensBanco = (lista.itens || []).map((item: any) => ({
-      id: item.id,
-      nome: item.nome || item.produto || item.descricao || 'Produto',
-      quantidade: item.quantidade || 1,
-    }));
+    // Ações na lista ativa do usuário
+    if (acao === 'ADD_ITEM') {
+      await prismaAny.itemLista.create({
+        data: {
+          nome: nomeItem,
+          quantidade: 1,
+          listaId: targetLista.id,
+          usuarioId: targetLista.usuarioId,
+        },
+      });
+    } else if (acao === 'UPDATE_QTD') {
+      const novaQtd = Math.max(1, quantidade);
+      await prismaAny.itemLista.update({
+        where: { id: itemId },
+        data: { quantidade: novaQtd },
+      });
+    } else if (acao === 'DELETE_ITEM') {
+      await prismaAny.itemLista.delete({
+        where: { id: itemId },
+      });
+    }
 
-    // Concatena os itens padrão com os itens adicionados pelo usuário
-    const todosItens = [...ITENS_PADRAO, ...itensBanco];
-
-    return NextResponse.json({
-      id: lista.id,
-      nome: lista.nome || 'Minha Lista de Compras',
-      itens: todosItens,
+    const listaAtualizada = await prismaAny.lista.findUnique({
+      where: { id: targetLista.id },
+      include: { itens: true },
     });
+
+    return NextResponse.json(listaAtualizada);
   } catch (error) {
-    console.error('Erro na rota GET de listas:', error);
-    return NextResponse.json({
-      id: 'default',
-      nome: 'Minha Lista de Compras',
-      itens: ITENS_PADRAO,
-    });
+    console.error('Erro ao atualizar lista:', error);
+    return NextResponse.json({ error: 'Erro ao processar alteração' }, { status: 500 });
   }
 }
 
-export async function POST(req: Request) {
+// Excluir Lista Inteira
+export async function DELETE(req: Request) {
   try {
-    const { nome, listaId } = await req.json();
+    const usuarioId = getUserId(req);
+    const { searchParams } = new URL(req.url);
+    const listaId = searchParams.get('listaId');
+
+    if (!listaId) {
+      return NextResponse.json({ error: 'ID da lista obrigatório' }, { status: 400 });
+    }
+
     const prismaAny = prisma as any;
+    const lista = await prismaAny.lista.findUnique({ where: { id: listaId } });
 
-    let targetListaId = listaId;
-    if (!targetListaId) {
-      const lista = await prismaAny.lista.findFirst();
-      targetListaId = lista?.id;
+    // Proteção: não exclui a Lista Dieese global padrão (somente as versões de usuário)
+    if (lista && lista.usuarioId === null) {
+      return NextResponse.json({ error: 'A Lista Dieese global não pode ser excluída.' }, { status: 400 });
     }
 
-    let novoItem;
-    try {
-      novoItem = await prismaAny.itemLista.create({
-        data: { nome, quantidade: 1, listaId: targetListaId },
-      });
-    } catch {
-      novoItem = await prismaAny.itemLista.create({
-        data: { produto: nome, quantidade: 1, listaId: targetListaId },
-      });
-    }
+    await prismaAny.itemLista.deleteMany({ where: { listaId } });
+    await prismaAny.lista.delete({ where: { id: listaId } });
 
-    return NextResponse.json(novoItem);
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Erro ao adicionar item:', error);
-    return NextResponse.json({ error: 'Erro ao adicionar item' }, { status: 500 });
+    console.error('Erro ao excluir lista:', error);
+    return NextResponse.json({ error: 'Erro ao excluir lista' }, { status: 500 });
   }
 }

@@ -43,7 +43,7 @@ export default function ListasPage() {
         }
       }
     } catch (err) {
-      console.error('Erro ao carregar listas:', err);
+      console.error('Erro ao buscar listas:', err);
     } finally {
       setCarregando(false);
     }
@@ -89,8 +89,8 @@ export default function ListasPage() {
     if (e) e.preventDefault();
     if (!listaAtual) return;
 
-    const textoAdicionar = payload.nomeItem || novoItemNome;
-    if (acao === 'ADD_ITEM' && !textoAdicionar.trim()) return;
+    const itemTexto = payload.nomeItem || novoItemNome;
+    if (acao === 'ADD_ITEM' && !itemTexto.trim()) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -103,7 +103,7 @@ export default function ListasPage() {
         body: JSON.stringify({
           listaId: listaAtual.id,
           acao,
-          nomeItem: textoAdicionar,
+          nomeItem: itemTexto,
           ...payload,
         }),
       });
@@ -112,20 +112,22 @@ export default function ListasPage() {
         const listaRetornada = await res.json();
         if (acao === 'ADD_ITEM') setNovoItemNome('');
         await carregarListas(listaRetornada.id);
+      } else {
+        alert('Erro ao processar item na lista. Tente novamente.');
       }
     } catch (err) {
-      console.error('Erro ao processar item:', err);
+      console.error('Erro ao processar ação no item:', err);
     }
   };
 
   const handleExcluirLista = async () => {
     if (!listaAtual) return;
     if (listaAtual.usuarioId === null) {
-      alert('A Lista Dieese padrão original não pode ser excluída.');
+      alert('A Lista Dieese padrão global não pode ser excluída.');
       return;
     }
 
-    if (!confirm(`Deseja excluir a lista "${listaAtual.nome}"?`)) return;
+    if (!confirm(`Excluir a lista "${listaAtual.nome}"?`)) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -139,19 +141,19 @@ export default function ListasPage() {
         await carregarListas();
       }
     } catch (err) {
-      console.error('Erro ao excluir lista:', err);
+      console.error('Erro ao deletar lista:', err);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* Header */}
+        {/* Topo */}
         <header className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-2xl">📋</span>
             <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
-              LISTA DE COMPRAS
+              LISTAS DE COMPRAS
             </h1>
           </div>
           <button
@@ -162,9 +164,12 @@ export default function ListasPage() {
           </button>
         </header>
 
-        {/* Modal/Input para Criar Nova Lista */}
+        {/* Input para Criar Lista */}
         {criandoLista && (
-          <form onSubmit={handleCriarLista} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
+          <form
+            onSubmit={handleCriarLista}
+            className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2"
+          >
             <input
               type="text"
               value={novaListaNome}
@@ -181,7 +186,7 @@ export default function ListasPage() {
           </form>
         )}
 
-        {/* Seletor de Listas */}
+        {/* Botões das Listas Disponíveis */}
         {listas.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {listas.map((l) => (
@@ -189,7 +194,7 @@ export default function ListasPage() {
                 key={l.id}
                 onClick={() => setListaAtivaId(l.id)}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all border ${
-                  (listaAtivaId === l.id || (!listaAtivaId && l === listas[0]))
+                  listaAtivaId === l.id || (!listaAtivaId && l === listas[0])
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
@@ -200,7 +205,7 @@ export default function ListasPage() {
           </div>
         )}
 
-        {/* Form Adicionar Produto */}
+        {/* Formulário do Botão Adicionar Item */}
         <form
           onSubmit={(e) => handleAcaoItem(e, 'ADD_ITEM')}
           className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2"
@@ -209,7 +214,7 @@ export default function ListasPage() {
             type="text"
             value={novoItemNome}
             onChange={(e) => setNovoItemNome(e.target.value)}
-            placeholder="Adicionar produto na lista..."
+            placeholder="Digite o produto..."
             className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button
@@ -220,14 +225,14 @@ export default function ListasPage() {
           </button>
         </form>
 
-        {/* Lista Ativa e Itens */}
+        {/* Corpo da Lista */}
         {carregando ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-500 shadow-sm">
             Carregando lista...
           </div>
         ) : !listaAtual ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs text-slate-400">
-            Nenhuma lista disponível.
+            Nenhuma lista encontrada.
           </div>
         ) : (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">

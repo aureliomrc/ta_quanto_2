@@ -23,7 +23,7 @@ const ITENS_DIEESE = [
 
 function getUserId(req: Request) {
   const authHeader = req.headers.get('authorization');
-  if (!authHeader || authHeader === 'Bearer null' || authHeader === 'Bearer undefined') return null;
+  if (!authHeader || authHeader.includes('null') || authHeader.includes('undefined')) return null;
   try {
     const token = authHeader.replace('Bearer ', '');
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
@@ -38,15 +38,19 @@ export async function GET(req: Request) {
     const usuarioId = getUserId(req);
     const prismaAny = prisma as any;
 
-    // 1. LIMPEZA AUTOMÁTICA: Remove qualquer lista antiga global sem dono que NÃO SEJA a "Lista Dieese"
-    await prismaAny.lista.deleteMany({
-      where: {
-        usuarioId: null,
-        nome: { not: 'Lista Dieese' },
-      },
-    });
+    // 1. Limpa todas as listas sem usuário que NÃO sejam a Lista Dieese original
+    try {
+      await prismaAny.lista.deleteMany({
+        where: {
+          usuarioId: null,
+          nome: { not: 'Lista Dieese' },
+        },
+      });
+    } catch (err) {
+      console.warn('Aviso ao limpar listas antigas:', err);
+    }
 
-    // 2. Garante que a Lista Dieese Global exista
+    // 2. Garante a existência da Lista Dieese Padrão Global
     let listaDieeseGlobal = await prismaAny.lista.findFirst({
       where: { nome: 'Lista Dieese', usuarioId: null },
       include: { itens: true },
@@ -58,33 +62,36 @@ export async function GET(req: Request) {
           nome: 'Lista Dieese',
           usuarioId: null,
           itens: {
-            create: ITENS_DIEESE.map((nome) => ({ nome, quantidade: 1 })),
+            create: ITENS_DIEESE.map((nome) => ({
+              nome,
+              quantidade: 1,
+            })),
           },
         },
         include: { itens: true },
       });
     }
 
-    // 3. Busca listas
+    // 3. Busca listas disponíveis para a sessão
     let listas = await prismaAny.lista.findMany({
       where: usuarioId ? { OR: [{ usuarioId }, { usuarioId: null }] } : { usuarioId: null },
       include: { itens: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    // Se o usuário tem uma versão própria da Lista Dieese, remove a versão global da visualização dele
+    // Se o usuário já possui sua cópia da Lista Dieese, esconde a global
     if (usuarioId) {
-      const temVersaoPropria = listas.some(
+      const possuiVersaoUsuario = listas.some(
         (l: any) => l.usuarioId === usuarioId && l.nome.includes('Dieese')
       );
-      if (temVersaoPropria) {
+      if (possuiVersaoUsuario) {
         listas = listas.filter((l: any) => !(l.usuarioId === null && l.nome === 'Lista Dieese'));
       }
     }
 
     return NextResponse.json(listas);
   } catch (error) {
-    console.error('Erro ao buscar listas:', error);
+    console.error('Erro na rota GET /api/listas:', error);
     return NextResponse.json([
       {
         id: 'dieese-default',
@@ -99,12 +106,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const usuarioId = getUserId(req) || 'guest-user';
-    const { nome } = await req.json();
+    const body = await req.json();
     const prismaAny = prisma as any;
 
     const novaLista = await prismaAny.lista.create({
       data: {
-        nome: nome || 'Minha Lista',
+        nome: body.nome || 'Minha Lista',
         usuarioId,
       },
       include: { itens: true },
@@ -112,7 +119,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(novaLista);
   } catch (error) {
-    console.error('Erro ao criar lista:', error);
+    console.error('Erro no POST /api/listas:', error);
     return NextResponse.json({ error: 'Erro ao criar lista' }, { status: 500 });
   }
 }
@@ -132,50 +139,60 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Lista não encontrada' }, { status: 404 });
     }
 
-    // SE ESTIVER NAVEGANDO NA LISTA DIEESE GLOBAL E EDITAR:
-    // Transforma essa alteração em uma NOVA LISTA do usuário imediatamente
+    // SE A LISTA FOR A DIEESE GLOBAL E HOUVER QUALQUER EDIÇÃO (ADD, EDIT OU EXCLUIR ITEM):
     if (targetLista.usuarioId === null && targetLista.nome === 'Lista Dieese') {
-      const novosItens = (targetLista.itens || []).map((i: any) => ({
-        nome: i.nome || i.produto || i.descricao,
+      const itensExistentes = (targetLista.itens || []).map((i: any) => ({
+        nome: i.nome || i.produto || i.descricao || 'Item',
         quantidade: i.quantidade || 1,
       }));
 
-      // Se a ação for adicionar item, adiciona ao payload da nova lista
+      // Se for inclusão de novo item, insere no array de criação da nova lista
       if (acao === 'ADD_ITEM' && nomeItem) {
-        novosItens.push({ nome: nomeItem, quantidade: 1 });
+        itensExistentes.push({
+          nome: nomeItem,
+          quantidade: 1,
+        });
       }
 
-      targetLista = await prismaAny.lista.create({
+      // Cria a nova versão da lista pertencente ao usuário
+      const novaListaUsuario = await prismaAny.lista.create({
         data: {
           nome: 'Lista Dieese (Minha Versão)',
           usuarioId,
           itens: {
-            create: novosItens,
+            create: itensExistentes,
           },
         },
         include: { itens: true },
       });
 
-      // Se já adicionou no array ao criar a lista, retorna direto
-      if (acao === 'ADD_ITEM') {
-        return NextResponse.json(targetLista);
-      }
+      return NextResponse.json(novaListaUsuario);
     }
 
-    // Executa alterações para listas normais
+    // AÇÕES PARA LISTAS PRÓPRIAS/EXISTENTES DO USUÁRIO
     if (acao === 'ADD_ITEM' && nomeItem) {
-      await prismaAny.itemLista.create({
-        data: {
-          nome: nomeItem,
-          quantidade: 1,
-          listaId: targetLista.id,
-          usuarioId: targetLista.usuarioId,
-        },
-      });
+      try {
+        await prismaAny.itemLista.create({
+          data: {
+            nome: nomeItem,
+            quantidade: 1,
+            listaId: targetLista.id,
+          },
+        });
+      } catch {
+        // Fallback para modelos que usam a propriedade 'produto' em vez de 'nome'
+        await prismaAny.itemLista.create({
+          data: {
+            produto: nomeItem,
+            quantidade: 1,
+            listaId: targetLista.id,
+          },
+        });
+      }
     } else if (acao === 'UPDATE_QTD' && itemId) {
       await prismaAny.itemLista.update({
         where: { id: itemId },
-        data: { quantidade: Math.max(1, quantidade) },
+        data: { quantidade: Math.max(1, Number(quantidade) || 1) },
       });
     } else if (acao === 'DELETE_ITEM' && itemId) {
       await prismaAny.itemLista.delete({
@@ -190,8 +207,8 @@ export async function PUT(req: Request) {
 
     return NextResponse.json(listaAtualizada);
   } catch (error) {
-    console.error('Erro ao atualizar lista:', error);
-    return NextResponse.json({ error: 'Erro ao processar alteração' }, { status: 500 });
+    console.error('Erro no PUT /api/listas:', error);
+    return NextResponse.json({ error: 'Erro ao processar item' }, { status: 500 });
   }
 }
 
@@ -201,14 +218,17 @@ export async function DELETE(req: Request) {
     const listaId = searchParams.get('listaId');
 
     if (!listaId) {
-      return NextResponse.json({ error: 'ID da lista é obrigatório' }, { status: 400 });
+      return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
     }
 
     const prismaAny = prisma as any;
     const lista = await prismaAny.lista.findUnique({ where: { id: listaId } });
 
     if (lista && lista.usuarioId === null) {
-      return NextResponse.json({ error: 'A Lista Dieese padrão global não pode ser excluída.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'A Lista Dieese global original não pode ser deletada.' },
+        { status: 400 }
+      );
     }
 
     await prismaAny.itemLista.deleteMany({ where: { listaId } });
@@ -216,7 +236,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Erro ao excluir lista:', error);
+    console.error('Erro no DELETE /api/listas:', error);
     return NextResponse.json({ error: 'Erro ao excluir lista' }, { status: 500 });
   }
 }

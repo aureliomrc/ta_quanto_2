@@ -23,31 +23,24 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // Busca ou cria a Lista Padrão global se não existir
+    // Busca ou cria a Lista Padrão para o usuário logado se não existir
     let listaPadrao = await prisma.lista.findFirst({
-      where: { nome: 'LISTA PADRÃO' },
+      where: { usuarioId, nome: 'LISTA PADRÃO' },
     });
 
     if (!listaPadrao) {
       listaPadrao = await prisma.lista.create({
-        data: { nome: 'LISTA PADRÃO', usuarioId: null },
+        data: { nome: 'LISTA PADRÃO', usuarioId },
       });
     }
 
-    // Busca as listas do usuário + a lista padrão
+    // Traz as listas do usuário com seus respectivos itens
     const listas = await prisma.lista.findMany({
-      where: {
-        OR: [
-          { usuarioId },
-          { id: listaPadrao.id }
-        ]
-      },
+      where: { usuarioId },
       include: {
-        itens: {
-          where: { usuarioId } // Traz apenas os itens pertencentes a este usuário
-        }
+        itens: true,
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
     return NextResponse.json(listas);

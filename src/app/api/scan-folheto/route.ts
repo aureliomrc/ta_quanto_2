@@ -39,14 +39,11 @@ export async function POST(req: Request) {
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.6-flash',
-      generationConfig: {
-        temperature: 0,
-      },
+      generationConfig: { temperature: 0 },
     });
 
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    const prompt = `Analise este folheto do mercado ${mercado}. Extraia todos os produtos com seus preços. Retorne EXCLUSIVAMENTE um array JSON puro: [{"produto": "Nome do Produto", "preco": 10.50}]`;
+    const prompt = `Analise este folheto do mercado ${mercado}. Extraia os produtos e preços. Retorne EXCLUSIVAMENTE um array JSON puro: [{"produto": "Nome", "preco": 10.50}]`;
 
     const result = await model.generateContent([
       prompt,
@@ -64,10 +61,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Erro ao interpretar folheto.' }, { status: 422 });
     }
 
-    if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
-    }
-
     const dadosParaInserir = ofertasExtraidas.map((item) => ({
       mercado,
       regiao: regiaoEnum,
@@ -76,10 +69,7 @@ export async function POST(req: Request) {
       usuarioId: usuarioId,
     }));
 
-    // Inserção em massa ultrarrápida no Neon
-    await prisma.oferta.createMany({
-      data: dadosParaInserir,
-    });
+    await prisma.oferta.createMany({ data: dadosParaInserir });
 
     return NextResponse.json({
       success: true,
@@ -87,7 +77,6 @@ export async function POST(req: Request) {
       itens: dadosParaInserir,
     });
   } catch (error: any) {
-    console.error('Erro no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro no processamento.' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Erro ao processar imagem.' }, { status: 500 });
   }
 }

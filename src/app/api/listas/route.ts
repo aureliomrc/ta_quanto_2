@@ -7,8 +7,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 function getUserId(req: Request) {
   const authHeader = req.headers.get('authorization');
   if (!authHeader) return null;
-  const token = authHeader.replace('Bearer ', '');
   try {
+    const token = authHeader.replace('Bearer ', '');
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
     return decoded.id;
   } catch {
@@ -16,7 +16,6 @@ function getUserId(req: Request) {
   }
 }
 
-// GET: Buscar todas as listas com seus itens
 export async function GET(req: Request) {
   try {
     const usuarioId = getUserId(req);
@@ -24,22 +23,40 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
+    // Busca ou cria a Lista Padrão global se não existir
+    let listaPadrao = await prisma.lista.findFirst({
+      where: { nome: 'LISTA PADRÃO' },
+    });
+
+    if (!listaPadrao) {
+      listaPadrao = await prisma.lista.create({
+        data: { nome: 'LISTA PADRÃO', usuarioId: null },
+      });
+    }
+
+    // Busca as listas do usuário + a lista padrão
     const listas = await prisma.lista.findMany({
-      where: { usuarioId },
-      include: {
-        itens: true,
+      where: {
+        OR: [
+          { usuarioId },
+          { id: listaPadrao.id }
+        ]
       },
-      orderBy: { createdAt: 'desc' },
+      include: {
+        itens: {
+          where: { usuarioId } // Traz apenas os itens pertencentes a este usuário
+        }
+      },
+      orderBy: { createdAt: 'desc' }
     });
 
     return NextResponse.json(listas);
   } catch (error) {
     console.error('Erro ao buscar listas:', error);
-    return NextResponse.json({ error: 'Erro ao buscar listas' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao carregar listas' }, { status: 500 });
   }
 }
 
-// POST: Criar nova lista
 export async function POST(req: Request) {
   try {
     const usuarioId = getUserId(req);
@@ -49,7 +66,7 @@ export async function POST(req: Request) {
 
     const { nome } = await req.json();
     if (!nome) {
-      return NextResponse.json({ error: 'Nome da lista é obrigatório' }, { status: 400 });
+      return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 });
     }
 
     const novaLista = await prisma.lista.create({
@@ -62,7 +79,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json(novaLista, { status: 201 });
   } catch (error) {
-    console.error('Erro ao criar lista:', error);
     return NextResponse.json({ error: 'Erro ao criar lista' }, { status: 500 });
   }
 }

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
-
-const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 
@@ -57,23 +55,23 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const nomeNovaLista = body.nomeNovaLista || body.nomeLista || body.nome;
-    const listaId = body.listaId || body.lista_id;
+    const listaId = body.listaId || body.lista_id || body.id;
     const nomeItem = body.nomeItem || body.produto || body.item || body.nome_item;
     const quantidade = parseInt(body.quantidade || 1);
 
     // 1. Criar Nova Lista
-    if (nomeNovaLista && !nomeItem) {
+    if (nomeNovaLista && !listaId) {
       const novaLista = await prisma.lista.create({
         data: {
           nome: nomeNovaLista,
-          isPadrao: !usuarioId, // Se não tiver usuário, marca como lista padrão global
+          isPadrao: !usuarioId,
           usuarioId: usuarioId,
         },
       });
       return NextResponse.json({ success: true, lista: novaLista });
     }
 
-    // 2. Adicionar Item na Lista
+    // 2. Adicionar Item na Lista Exista
     if (listaId && nomeItem) {
       const novoItem = await prisma.itemLista.create({
         data: {
@@ -87,7 +85,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Envie "nomeNovaLista" para criar lista ou "listaId" + "nomeItem" para inserir item.' },
+      { error: 'Envie nomeNovaLista para criar uma lista ou listaId + nomeItem para inserir um item.' },
       { status: 400 }
     );
   } catch (err: any) {

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { PrismaClient, Regiao } from '@prisma/client';
+import { Regiao } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
-const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 function normalizarRegiao(regiaoText: string): Regiao {
@@ -39,8 +39,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    // Modelo corrigido para versão compatível
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise este folheto do mercado ${mercado}.
@@ -69,20 +68,23 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
     }
 
-    // Gravação resiliente no Prisma
     const ofertasSalvas = [];
     for (const item of ofertasExtraidas) {
       const precoNum = parseFloat(String(item.preco).replace(',', '.')) || 0;
-      const novaOferta = await prisma.oferta.create({
-        data: {
-          mercado,
-          regiao: regiaoEnum,
-          produto: item.produto || 'Produto Sem Nome',
-          preco: precoNum,
-          usuarioId: usuarioId,
-        },
-      });
-      ofertasSalvas.push(novaOferta);
+      try {
+        const novaOferta = await prisma.oferta.create({
+          data: {
+            mercado,
+            regiao: regiaoEnum,
+            produto: item.produto || 'Produto Sem Nome',
+            preco: precoNum,
+            usuarioId: usuarioId,
+          },
+        });
+        ofertasSalvas.push(novaOferta);
+      } catch (dbError) {
+        console.error('Erro ao salvar item no banco:', dbError);
+      }
     }
 
     return NextResponse.json({

@@ -89,7 +89,7 @@ export default function CotacaoPrecosPage() {
     const token = localStorage.getItem('token');
 
     setCarregando(true);
-    setMensagem('Analisando ofertas com a IA e salvando no histórico...');
+    setMensagem('Analisando ofertas com a IA...');
     setProdutosExtraidos([]);
 
     try {
@@ -99,17 +99,16 @@ export default function CotacaoPrecosPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token || ''}`,
         },
-        body: JSON.stringify({ imageBase64, mercado, regiao }),
+        body: JSON.stringify({ imageBase64: imagemBase64, mercado, regiao }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.result) {
         setProdutosExtraidos(data.result);
-        setMensagem(`✅ Sucesso! ${data.result.length || 0} oferta(s) salva(s) no Histórico!`);
+        setMensagem(`✅ Sucesso! ${data.result.length || 0} oferta(s) identificada(s)!`);
         setImagemBase64(null);
 
-        // Gera simulação comparativa entre mercados da região
         gerarComparativo(data.result);
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
@@ -121,7 +120,6 @@ export default function CotacaoPrecosPage() {
     }
   };
 
-  // Calcula qual mercado sai mais barato usando Folheto ou Média SEFAZ
   const gerarComparativo = (itensBipados: { produto: string; preco: number }[]) => {
     const mercadosDaRegiao = [mercado, 'Atacadão', 'Carrefour'];
     
@@ -131,9 +129,8 @@ export default function CotacaoPrecosPage() {
         let precoFinal = item.preco;
         let fonte: 'FOLHETO' | 'MÉDIA SEFAZ' = 'FOLHETO';
 
-        // Se o mercado for diferente do folheto bipado, simula busca no banco ou aplica Média SEFAZ
         if (m !== mercado) {
-          const variacao = (Math.random() * 0.2 - 0.1); // pequena variação de mercado
+          const variacao = (Math.random() * 0.2 - 0.1);
           precoFinal = Number((item.preco * (1 + variacao)).toFixed(2));
           fonte = Math.random() > 0.4 ? 'FOLHETO' : 'MÉDIA SEFAZ';
         }
@@ -145,7 +142,6 @@ export default function CotacaoPrecosPage() {
       return { mercado: m, total: Number(total.toFixed(2)), itensDetalhes: detalhes };
     });
 
-    // Ordena do mercado mais barato para o mais caro
     resultado.sort((a, b) => a.total - b.total);
     setComparativoMercados(resultado);
   };
@@ -277,7 +273,6 @@ export default function CotacaoPrecosPage() {
           </div>
         )}
 
-        {/* Comparativo Econômico entre Supermercados da Região */}
         {comparativoMercados.length > 0 && (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider">

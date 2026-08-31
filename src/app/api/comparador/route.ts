@@ -62,21 +62,28 @@ export async function POST(req: Request) {
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
 
-    // Salva no banco de dados para o Histórico se o usuário estiver logado
+    // Salva no banco de dados se a tabela existir no prisma client
     if (usuarioId && produtos.length > 0) {
-      await prisma.historicoFolheto.create({
-        data: {
-          usuarioId,
-          mercado: mercado || 'Não informado',
-          regiao: regiao || 'SUDESTE',
-          itens: {
-            create: produtos.map((p) => ({
-              produto: p.produto.toUpperCase(),
-              preco: p.preco,
-            })),
-          },
-        },
-      });
+      try {
+        const prismaAny = prisma as any;
+        if (prismaAny.historicoFolheto) {
+          await prismaAny.historicoFolheto.create({
+            data: {
+              usuarioId,
+              mercado: mercado || 'Não informado',
+              regiao: regiao || 'SUDESTE',
+              itens: {
+                create: produtos.map((p) => ({
+                  produto: String(p.produto).toUpperCase(),
+                  preco: Number(p.preco),
+                })),
+              },
+            },
+          });
+        }
+      } catch (dbError) {
+        console.warn('Aviso: Não foi possível salvar no histórico (tabela Prisma ausente):', dbError);
+      }
     }
 
     return NextResponse.json({ result: produtos });

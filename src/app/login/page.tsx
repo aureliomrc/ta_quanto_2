@@ -1,147 +1,246 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function AuthPage() {
+export default function LoginPage() {
   const router = useRouter();
   const [aba, setAba] = useState<'login' | 'cadastro'>('login');
 
-  const [nome, setNome] = useState('');
-  const [usuario, setUsuario] = useState('');
-  const [senha, setSenha] = useState('');
-  const [regioes, setRegioes] = useState<string[]>([]);
+  // Campos de Login
+  const [emailLogin, setEmailLogin] = useState('');
+  const [senhaLogin, setSenhaLogin] = useState('');
 
-  const handleRegiaoToggle = (reg: string) => {
-    setRegioes((prev) => (prev.includes(reg) ? prev.filter((r) => r !== reg) : [...prev, reg]));
-  };
+  // Campos de Cadastro
+  const [nomeCadastro, setNomeCadastro] = useState('');
+  const [emailCadastro, setEmailCadastro] = useState('');
+  const [senhaCadastro, setSenhaCadastro] = useState('');
 
-  const handleAuth = async (e: React.FormEvent) => {
+  // Mensagens
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
+
+  // Processa Entrar (PUT conforme rotas do seu backend)
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const endpoint = '/api/auth';
-    const method = aba === 'login' ? 'PUT' : 'POST';
-    const body = aba === 'login' ? { usuario, senha } : { nome, usuario, senha, regioes };
+    setErro('');
+    setSucesso('');
+    setCarregando(true);
 
-    const res = await fetch(endpoint, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailLogin, senha: senhaLogin }),
+      });
 
-    if (res.ok) {
-      if (aba === 'login') {
-        const data = await res.json();
-        // Armazena credenciais para uso nas APIs do Scanner e Histórico
+      const data = await res.json();
+
+      if (res.ok && data.token) {
         localStorage.setItem('token', data.token);
-        localStorage.setItem('userId', data.user.id);
         router.push('/listas');
       } else {
-        alert('Cadastro realizado! Faça login para continuar.');
-        setAba('login');
+        setErro(data.error || 'Email ou senha inválidos.');
       }
-    } else {
-      alert('Erro ao processar a requisição.');
+    } catch {
+      setErro('Erro ao conectar com o servidor.');
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  // Processa Cadastro (POST)
+  const handleCadastro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErro('');
+    setSucesso('');
+    setCarregando(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: nomeCadastro,
+          email: emailCadastro,
+          senha: senhaCadastro,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSucesso('Conta criada com sucesso! Faça login para continuar.');
+        setAba('login');
+        setEmailLogin(emailCadastro);
+        setSenhaLogin('');
+      } else {
+        setErro(data.error || 'Erro ao realizar cadastro.');
+      }
+    } catch {
+      setErro('Erro de conexão com o servidor.');
+    } finally {
+      setCarregando(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#0d5c91] flex items-center justify-center p-4 font-sans">
-      <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl space-y-6">
-        <div className="text-center space-y-1">
-          <div className="flex items-center justify-center gap-2 text-2xl font-black text-[#008744]">
-            <span className="text-3xl">🛒</span> TÁ QUANTO?
-          </div>
-          <p className="text-gray-500 text-sm font-medium">
-            {aba === 'login' ? 'Faça login para comparar suas listas' : 'Crie sua conta para começar'}
+    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 font-sans">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200">
+        
+        {/* Banner do Cabeçalho */}
+        <div className="bg-[#0d5c91] text-white p-6 text-center">
+          <h1 className="text-3xl font-black tracking-tight text-[#008744] bg-white inline-block px-4 py-1 rounded-2xl shadow-sm">
+            TÁ QUANTO?
+          </h1>
+          <p className="text-xs text-slate-200 mt-2 font-medium">
+            Economize e compare preços de supermercados em tempo real
           </p>
         </div>
 
-        <div className="flex border-b border-gray-200">
+        {/* Seleção de Abas */}
+        <div className="flex border-b border-slate-200 bg-slate-50">
           <button
             type="button"
-            onClick={() => setAba('login')}
-            className={`flex-1 py-3 text-sm font-bold tracking-wider ${
-              aba === 'login' ? 'text-[#008744] border-b-2 border-[#008744]' : 'text-gray-400'
+            onClick={() => {
+              setAba('login');
+              setErro('');
+              setSucesso('');
+            }}
+            className={`flex-1 py-3 text-xs font-black tracking-wider uppercase transition-all ${
+              aba === 'login'
+                ? 'bg-white text-[#0d5c91] border-b-2 border-[#0d5c91]'
+                : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            ENTRAR
+            Entrar
           </button>
           <button
             type="button"
-            onClick={() => setAba('cadastro')}
-            className={`flex-1 py-3 text-sm font-bold tracking-wider ${
-              aba === 'cadastro' ? 'text-[#008744] border-b-2 border-[#008744]' : 'text-gray-400'
+            onClick={() => {
+              setAba('cadastro');
+              setErro('');
+              setSucesso('');
+            }}
+            className={`flex-1 py-3 text-xs font-black tracking-wider uppercase transition-all ${
+              aba === 'cadastro'
+                ? 'bg-white text-[#0d5c91] border-b-2 border-[#0d5c91]'
+                : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            CADASTRAR-SE
+            Cadastrar-se
           </button>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          {aba === 'cadastro' && (
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Nome Completo</label>
-              <input
-                type="text"
-                placeholder="Digite seu nome completo"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#008744]"
-                required
-              />
+        <div className="p-6">
+          {/* Alertas */}
+          {erro && (
+            <div className="mb-4 bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">
+              {erro}
+            </div>
+          )}
+          {sucesso && (
+            <div className="mb-4 bg-emerald-50 text-emerald-700 border border-emerald-200 p-3 rounded-xl text-xs font-bold text-center">
+              {sucesso}
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">Nome de Usuário</label>
-            <input
-              type="text"
-              placeholder="Digite seu usuário"
-              value={usuario}
-              onChange={(e) => setUsuario(e.target.value)}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#008744]"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">Senha</label>
-            <input
-              type="password"
-              placeholder="Digite sua senha"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              className="w-full border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#008744]"
-              required
-            />
-          </div>
-
-          {aba === 'cadastro' && (
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">Regiões de Interesse</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {['SUL', 'SUDESTE', 'NORTE', 'NORDESTE', 'CENTRO_OESTE'].map((reg) => (
-                  <label key={reg} className="flex items-center gap-2 border p-2 rounded-xl cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={regioes.includes(reg)}
-                      onChange={() => handleRegiaoToggle(reg)}
-                    />
-                    {reg}
-                  </label>
-                ))}
+          {/* Form de Login */}
+          {aba === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={emailLogin}
+                  onChange={(e) => setEmailLogin(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
+                />
               </div>
-            </div>
-          )}
 
-          <button
-            type="submit"
-            className="w-full bg-[#008744] hover:bg-[#007038] text-white font-bold py-3.5 rounded-full shadow-lg transition"
-          >
-            {aba === 'login' ? 'Entrar' : 'Cadastrar'}
-          </button>
-        </form>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={senhaLogin}
+                  onChange={(e) => setSenhaLogin(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={carregando}
+                className="w-full bg-[#008744] hover:bg-emerald-700 text-white font-black py-3 rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 mt-2"
+              >
+                {carregando ? 'ENTRANDO...' : 'ENTRAR'}
+              </button>
+            </form>
+          ) : (
+            /* Form de Cadastro */
+            <form onSubmit={handleCadastro} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nome Completo
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={nomeCadastro}
+                  onChange={(e) => setNomeCadastro(e.target.value)}
+                  placeholder="Ex: Maria Silva"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={emailCadastro}
+                  onChange={(e) => setEmailCadastro(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={senhaCadastro}
+                  onChange={(e) => setSenhaCadastro(e.target.value)}
+                  placeholder="Crie uma senha segura"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={carregando}
+                className="w-full bg-[#0d5c91] hover:bg-blue-900 text-white font-black py-3 rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 mt-2"
+              >
+                {carregando ? 'CRIANDO CONTA...' : 'CRIAR MINHA CONTA'}
+              </button>
+            </form>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

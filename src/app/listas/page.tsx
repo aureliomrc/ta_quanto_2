@@ -1,161 +1,252 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+interface ItemLista {
+  id: string;
+  nome: string;
+  comprado: boolean;
+}
+
+interface ListaCompras {
+  id: string;
+  titulo: string;
+  itens: ItemLista[];
+}
 
 export default function ListasPage() {
-  const [listas, setListas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [nomeNovaLista, setNomeNovaLista] = useState('');
-  const [novoItem, setNovoItem] = useState('');
-  const [listaSelecionadaId, setListaSelecionadaId] = useState<string | null>(null);
+  const router = useRouter();
+  const [listas, setListas] = useState<ListaCompras[]>([]);
+  const [novaListaTitulo, setNovaListaTitulo] = useState('');
+  const [novoItemTexto, setNovoItemTexto] = useState<{ [key: string]: string }>({});
+  const [carregando, setCarregando] = useState(true);
 
-  // 1. Recarrega as listas do banco Neon sempre que a tela é aberta
-  const carregarListas = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/listas', {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setListas(data.listas || []);
-        // Seleciona a primeira lista por padrão caso não haja nenhuma selecionada
-        if (data.listas.length > 0 && !listaSelecionadaId) {
-          setListaSelecionadaId(data.listas[0].id);
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao carregar listas:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Carrega listas simuladas / salvas
   useEffect(() => {
-    carregarListas();
-  }, []);
-
-  // 2. Criar Nova Lista e atualizar estado local + banco
-  const criarLista = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!nomeNovaLista.trim()) return;
-
     const token = localStorage.getItem('token');
-    const res = await fetch('/api/listas', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-      },
-      body: JSON.stringify({ nomeNovaLista }),
-    });
-
-    const data = await res.json();
-    if (data.success && data.lista) {
-      setNomeNovaLista('');
-      await carregarListas(); // Recarrega todas do banco
-      setListaSelecionadaId(data.lista.id);
+    if (!token) {
+      router.push('/login');
+      return;
     }
+
+    const listasSalvas = localStorage.getItem('minhas_listas');
+    if (listasSalvas) {
+      try {
+        setListas(JSON.parse(listasSalvas));
+      } catch {
+        setListas([]);
+      }
+    } else {
+      // Exemplo padrão inicial
+      setListas([
+        {
+          id: '1',
+          titulo: 'Compras do Mês',
+          itens: [
+            { id: '101', nome: 'Arroz 5kg', comprado: false },
+            { id: '102', nome: 'Feijão Carioca', comprado: true },
+          ],
+        },
+      ]);
+    }
+    setCarregando(false);
+  }, [router]);
+
+  // Salva no LocalStorage sempre que alterar
+  const salvarListas = (novasListas: ListaCompras[]) => {
+    setListas(novasListas);
+    localStorage.setItem('minhas_listas', JSON.stringify(novasListas));
   };
 
-  // 3. Adicionar Item na Lista selecionada
-  const adicionarItem = async (e: React.FormEvent) => {
+  const criarNovaLista = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoItem.trim() || !listaSelecionadaId) return;
+    if (!novaListaTitulo.trim()) return;
 
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/listas', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-      },
-      body: JSON.stringify({
-        listaId: listaSelecionadaId,
-        nomeItem: novoItem,
-        quantidade: 1,
-      }),
-    });
+    const nova: ListaCompras = {
+      id: Date.now().toString(),
+      titulo: novaListaTitulo.trim(),
+      itens: [],
+    };
 
-    const data = await res.json();
-    if (data.success) {
-      setNovoItem('');
-      await carregarListas(); // Sincroniza com o Neon
-    }
+    salvarListas([...listas, nova]);
+    setNovaListaTitulo('');
   };
 
-  if (loading) return <div className="p-8 text-center">Carregando listas...</div>;
+  const adicionarItem = (listaId: string) => {
+    const texto = novoItemTexto[listaId];
+    if (!texto || !texto.trim()) return;
+
+    const listasAtualizadas = listas.map((lista) => {
+      if (lista.id === listaId) {
+        return {
+          ...lista,
+          itens: [
+            ...lista.itens,
+            { id: Date.now().toString(), nome: texto.trim(), comprado: false },
+          ],
+        };
+      }
+      return lista;
+    });
+
+    salvarListas(listasAtualizadas);
+    setNovoItemTexto({ ...novoItemTexto, [listaId]: '' });
+  };
+
+  const toggleItemComprado = (listaId: string, itemId: string) => {
+    const listasAtualizadas = listas.map((lista) => {
+      if (lista.id === listaId) {
+        return {
+          ...lista,
+          itens: lista.itens.map((item) =>
+            item.id === itemId ? { ...item, comprado: !item.comprado } : item
+          ),
+        };
+      }
+      return lista;
+    });
+
+    salvarListas(listasAtualizadas);
+  };
+
+  const excluirLista = (listaId: string) => {
+    const listasAtualizadas = listas.filter((l) => l.id !== listaId);
+    salvarListas(listasAtualizadas);
+  };
+
+  if (carregando) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center font-sans">
+        <p className="text-slate-500 font-bold text-sm">Carregando listas...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Minhas Listas</h1>
+    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
+      <div className="space-y-4">
+        {/* Cabeçalho */}
+        <header className="flex justify-between items-center border-b border-slate-200 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📋</span>
+            <h1 className="text-lg font-black text-[#0d5c91] uppercase tracking-tight">
+              MINHAS LISTAS
+            </h1>
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('token');
+              router.push('/login');
+            }}
+            className="text-xs font-bold text-red-500 hover:text-red-700"
+          >
+            Sair
+          </button>
+        </header>
 
-      {/* Formulário Criar Lista */}
-      <form onSubmit={criarLista} className="flex gap-2 mb-6">
-        <input
-          type="text"
-          placeholder="Nome da nova lista..."
-          value={nomeNovaLista}
-          onChange={(e) => setNomeNovaLista(e.target.value)}
-          className="border p-2 rounded w-full"
-        />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
-          Criar Lista
-        </button>
-      </form>
+        {/* Formulário Criar Nova Lista */}
+        <form onSubmit={criarNovaLista} className="flex gap-2">
+          <input
+            type="text"
+            value={novaListaTitulo}
+            onChange={(e) => setNovaListaTitulo(e.target.value)}
+            placeholder="Nome da nova lista..."
+            className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d5c91] bg-white"
+          />
+          <button
+            type="submit"
+            className="bg-[#008744] hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md active:scale-95"
+          >
+            + Criar
+          </button>
+        </form>
 
-      {/* Exibição das Listas */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="border p-4 rounded bg-gray-50">
-          <h2 className="font-semibold mb-2">Suas Listas</h2>
-          {listas.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => setListaSelecionadaId(l.id)}
-              className={`block w-full text-left p-2 rounded mb-1 ${
-                listaSelecionadaId === l.id ? 'bg-blue-100 font-bold' : 'hover:bg-gray-200'
-              }`}
+        {/* Exibição das Listas */}
+        {listas.length === 0 ? (
+          <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs font-medium">
+            Você ainda não criou nenhuma lista.
+          </div>
+        ) : (
+          listas.map((lista) => (
+            <div
+              key={lista.id}
+              className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3"
             >
-              {l.nome} ({l.itens?.length || 0})
-            </button>
-          ))}
-        </div>
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h2 className="font-bold text-slate-800 text-sm">{lista.titulo}</h2>
+                <button
+                  onClick={() => excluirLista(lista.id)}
+                  className="text-xs text-slate-400 hover:text-red-500 font-bold"
+                >
+                  Excluir
+                </button>
+              </div>
 
-        {/* Itens da Lista Selecionada */}
-        <div className="md:col-span-2 border p-4 rounded">
-          {listaSelecionadaId ? (
-            <>
-              <form onSubmit={adicionarItem} className="flex gap-2 mb-4">
+              {/* Itens da Lista */}
+              <ul className="space-y-1.5">
+                {lista.itens.map((item) => (
+                  <li
+                    key={item.id}
+                    onClick={() => toggleItemComprado(lista.id, item.id)}
+                    className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.comprado}
+                      onChange={() => {}}
+                      className="accent-[#008744] h-4 w-4 rounded"
+                    />
+                    <span
+                      className={`text-xs ${
+                        item.comprado
+                          ? 'line-through text-slate-400'
+                          : 'text-slate-700 font-medium'
+                      }`}
+                    >
+                      {item.nome}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Adicionar Novo Item na Lista */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <input
                   type="text"
+                  value={novoItemTexto[lista.id] || ''}
+                  onChange={(e) =>
+                    setNovoItemTexto({ ...novoItemTexto, [lista.id]: e.target.value })
+                  }
                   placeholder="Adicionar produto..."
-                  value={novoItem}
-                  onChange={(e) => setNovoItem(e.target.value)}
-                  className="border p-2 rounded w-full"
+                  className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#0d5c91]"
                 />
-                <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
-                  Adicionar
+                <button
+                  type="button"
+                  onClick={() => adicionarItem(lista.id)}
+                  className="bg-[#0d5c91] text-white px-3 py-1 rounded-lg text-xs font-bold"
+                >
+                  Add
                 </button>
-              </form>
-
-              <ul>
-                {listas
-                  .find((l) => l.id === listaSelecionadaId)
-                  ?.itens?.map((item: any) => (
-                    <li key={item.id} className="p-2 border-b flex justify-between">
-                      <span>{item.nome}</span>
-                      <span className="text-sm text-gray-500">Qtd: {item.quantidade}</span>
-                    </li>
-                  ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-gray-500">Selecione ou crie uma lista para ver os itens.</p>
-          )}
-        </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
+
+      {/* Menu de Navegação Inferior */}
+      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 max-w-md mx-auto">
+        <Link href="/listas" className="flex flex-col items-center text-[#0d5c91] text-xs font-bold">
+          <span className="text-lg">📋</span> Listas
+        </Link>
+        <Link href="/scanner" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-[#0d5c91]">
+          <span className="text-lg">📊</span> Comparar
+        </Link>
+        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-[#0d5c91]">
+          <span className="text-lg">📜</span> Histórico
+        </Link>
+      </nav>
     </div>
   );
 }

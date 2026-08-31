@@ -25,16 +25,20 @@ export default function ListasPage() {
   const [carregando, setCarregando] = useState(true);
   const [criandoLista, setCriandoLista] = useState(false);
 
-  const carregarListas = async () => {
+  const carregarListas = async (selecionarNovaId?: string) => {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/listas', {
         headers: { Authorization: `Bearer ${token || ''}` },
       });
+
       if (res.ok) {
-        const data = await res.json();
+        const data: ListaData[] = await res.json();
         setListas(data);
-        if (data.length > 0 && !listaAtivaId) {
+
+        if (selecionarNovaId) {
+          setListaAtivaId(selecionarNovaId);
+        } else if (data.length > 0 && (!listaAtivaId || !data.some((l) => l.id === listaAtivaId))) {
           setListaAtivaId(data[0].id);
         }
       }
@@ -70,16 +74,24 @@ export default function ListasPage() {
         const nova = await res.json();
         setNovaListaNome('');
         setCriandoLista(false);
-        await carregarListas();
-        setListaAtivaId(nova.id);
+        await carregarListas(nova.id);
       }
     } catch (err) {
       console.error('Erro ao criar lista:', err);
     }
   };
 
-  const handleAcaoItem = async (acao: 'ADD_ITEM' | 'UPDATE_QTD' | 'DELETE_ITEM', payload: any = {}) => {
+  const handleAcaoItem = async (
+    e?: React.FormEvent,
+    acao: 'ADD_ITEM' | 'UPDATE_QTD' | 'DELETE_ITEM' = 'ADD_ITEM',
+    payload: any = {}
+  ) => {
+    if (e) e.preventDefault();
     if (!listaAtual) return;
+
+    const nomeParaAdicionar = payload.nomeItem || novoItemNome;
+    if (acao === 'ADD_ITEM' && !nomeParaAdicionar.trim()) return;
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/listas', {
@@ -91,13 +103,15 @@ export default function ListasPage() {
         body: JSON.stringify({
           listaId: listaAtual.id,
           acao,
+          nomeItem: nomeParaAdicionar,
           ...payload,
         }),
       });
 
       if (res.ok) {
+        const listaRetornada = await res.json();
         if (acao === 'ADD_ITEM') setNovoItemNome('');
-        await carregarListas();
+        await carregarListas(listaRetornada.id);
       }
     } catch (err) {
       console.error('Erro na ação do item:', err);
@@ -107,11 +121,11 @@ export default function ListasPage() {
   const handleExcluirLista = async () => {
     if (!listaAtual) return;
     if (listaAtual.usuarioId === null) {
-      alert('A Lista Dieese global padrão não pode ser excluída.');
+      alert('A Lista Dieese padrão original não pode ser excluída.');
       return;
     }
 
-    if (!confirm(`Tem certeza que deseja excluir a lista "${listaAtual.nome}"?`)) return;
+    if (!confirm(`Deseja excluir a lista "${listaAtual.nome}"?`)) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -137,7 +151,7 @@ export default function ListasPage() {
           <div className="flex items-center gap-2">
             <span className="text-2xl">📋</span>
             <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
-              LISTAS DE COMPRAS
+              LISTA DE COMPRAS
             </h1>
           </div>
           <button
@@ -188,35 +202,32 @@ export default function ListasPage() {
 
         {/* Adicionar Produto na Lista Ativa */}
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (novoItemNome.trim()) handleAcaoItem('ADD_ITEM', { nomeItem: novoItemNome });
-          }}
+          onSubmit={(e) => handleAcaoItem(e, 'ADD_ITEM')}
           className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2"
         >
           <input
             type="text"
             value={novoItemNome}
             onChange={(e) => setNovoItemNome(e.target.value)}
-            placeholder="Adicionar item nesta lista..."
+            placeholder="Adicionar produto na lista..."
             className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button
             type="submit"
-            className="bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl text-xs hover:bg-emerald-500 transition-all"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all"
           >
             Adicionar
           </button>
         </form>
 
-        {/* Exibição dos Itens da Lista */}
+        {/* Exibição dos Itens da Lista Ativa */}
         {carregando ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-500 shadow-sm">
             Carregando lista...
           </div>
         ) : !listaAtual ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs text-slate-400">
-            Nenhuma lista encontrada.
+            Nenhuma lista disponível.
           </div>
         ) : (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
@@ -227,7 +238,7 @@ export default function ListasPage() {
                 </h2>
                 {listaAtual.usuarioId === null && (
                   <span className="text-[9px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                    Padrão Global (Edições criam sua cópia)
+                    Padrão Global (Qualquer edição criará sua versão)
                   </span>
                 )}
               </div>
@@ -264,11 +275,11 @@ export default function ListasPage() {
                         {index + 1}. {nome}
                       </span>
 
-                      {/* Controle de Quantidade (+ / -) e Excluir Item */}
                       <div className="flex items-center gap-1.5">
                         <button
+                          type="button"
                           onClick={() =>
-                            handleAcaoItem('UPDATE_QTD', {
+                            handleAcaoItem(undefined, 'UPDATE_QTD', {
                               itemId: item.id,
                               quantidade: (item.quantidade || 1) - 1,
                             })
@@ -281,8 +292,9 @@ export default function ListasPage() {
                           {item.quantidade || 1}
                         </span>
                         <button
+                          type="button"
                           onClick={() =>
-                            handleAcaoItem('UPDATE_QTD', {
+                            handleAcaoItem(undefined, 'UPDATE_QTD', {
                               itemId: item.id,
                               quantidade: (item.quantidade || 1) + 1,
                             })
@@ -292,7 +304,8 @@ export default function ListasPage() {
                           +
                         </button>
                         <button
-                          onClick={() => handleAcaoItem('DELETE_ITEM', { itemId: item.id })}
+                          type="button"
+                          onClick={() => handleAcaoItem(undefined, 'DELETE_ITEM', { itemId: item.id })}
                           className="text-slate-400 hover:text-red-600 font-bold ml-1 text-xs"
                           title="Remover Item"
                         >
@@ -308,7 +321,7 @@ export default function ListasPage() {
         )}
       </div>
 
-      {/* Bottom Nav */}
+      {/* Navegação */}
       <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
         <Link href="/listas" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
           <span>📋</span> Listas

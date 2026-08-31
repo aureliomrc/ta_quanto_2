@@ -8,36 +8,53 @@ export async function POST(req: Request) {
     const { imageBase64 } = await req.json();
 
     if (!imageBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem foi enviada' }, { status: 400 });
+      return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({ error: 'Chave GEMINI_API_KEY não encontrada no servidor.' }, { status: 500 });
+    }
 
-    const prompt = `Analise a imagem deste folheto de supermercado e retorne APENAS um array JSON válido, sem formatação markdown ou textos adicionais, contendo os produtos e preços. 
-    Exemplo de resposta esperada: [{"produto": "Arroz 5kg", "preco": 24.90}]`;
+    // Extrai o MimeType real da imagem (png, jpeg, webp)
+    const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const base64Clean = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    // Utiliza a versão Flash oficial com resposta forçada em JSON
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const prompt = `Analise a imagem deste folheto/encarte de ofertas e extraia todos os produtos com seus respetivos preços. 
+    Retorne estritamente um array em JSON no seguinte formato:
+    [{"produto": "Nome do Produto", "preco": 10.90}]`;
 
     const imageParts = [
       {
         inlineData: {
-          data: base64Clean,
-          mimeType: 'image/jpeg',
+          data: base64Data,
+          mimeType: mimeType,
         },
       },
     ];
 
     const result = await model.generateContent([prompt, ...imageParts]);
-    let responseText = result.response.text();
+    const responseText = result.response.text();
 
-    // Limpa tags de código markdown caso a IA retorne
-    responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    // Limpeza de marcação de código
+    const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    const produtos = JSON.parse(responseText);
+    const produtos = JSON.parse(cleanedText);
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro na leitura do folheto:', error);
-    return NextResponse.json({ error: 'Falha ao processar folheto com a IA.' }, { status: 500 });
+    console.error('Erro no processamento do Gemini:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Erro ao processar imagem com a IA.' },
+      { status: 500 }
+    );
   }
 }

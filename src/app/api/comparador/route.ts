@@ -1,84 +1,31 @@
-import { NextResponse } from 'next/server';
-import { neon } from '@neondatabase/serverless';
-import jwt from 'jsonwebtoken';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const sql = neon(process.env.DATABASE_URL!);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-    
-    let userId = '';
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-        userId = decoded.id;
-      } catch {}
-    }
+    const { imageBase64 } = await req.json();
 
-    const { listaId } = await req.json();
+    // Atualizado para a versão 3.6 Flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-    if (!listaId) {
-      return NextResponse.json({ error: 'ID da lista é obrigatório.' }, { status: 400 });
-    }
+    const prompt = 'Extraia todos os produtos e preços no formato JSON: [{"produto": "", "preco": 0.00}]';
 
-    // Traz itens base da lista selecionada + itens inseridos pelo próprio usuário
-    const itensLista = await sql`
-      SELECT id, nome, preco_customizado, quantidade, categoria
-      FROM itens_lista
-      WHERE lista_id = ${listaId} AND (user_id IS NULL OR user_id = ${userId});
-    `;
+    const imageParts = [
+      {
+        inlineData: {
+          data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
+          mimeType: 'image/jpeg',
+        },
+      },
+    ];
 
-    const resultadoComparacao = [];
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const responseText = result.response.text();
 
-    for (const item of itensLista) {
-      // Procura primeiro nos folhetos e gôndolas públicas extraídas
-      const capturas = await sql`
-        SELECT hi.preco_capturado, he.mercado, he.created_at
-        FROM historico_itens hi
-        JOIN historico_escaneamentos he ON hi.historico_id = he.id
-        WHERE LOWER(hi.nome) LIKE LOWER(${'%' + item.nome + '%'})
-          AND (he.is_public = TRUE OR he.user_id = ${userId})
-        ORDER BY he.created_at DESC
-        LIMIT 1;
-      `;
-
-      if (capturas.length > 0) {
-        resultadoComparacao.push({
-          produto: item.nome,
-          origem: 'Folheto / Extração',
-          mercado: capturas[0].mercado,
-          preco: Number(capturas[0].preco_capturado),
-          quantidade: item.quantidade,
-        });
-      } else {
-        // Fallback: Se nunca foi extraído, calcula a Média SEFAZ
-        const mediaSefaz = await sql`
-          SELECT AVG(preco_medio) as media_preco
-          FROM tabela_sefaz_produtos
-          WHERE LOWER(nome_produto) LIKE LOWER(${'%' + item.nome + '%'});
-        `;
-
-        const precoCalculado = mediaSefaz[0]?.media_preco 
-          ? Number(mediaSefaz[0].media_preco)
-          : (item.preco_customizado ? Number(item.preco_customizado) : 0);
-
-        resultadoComparacao.push({
-          produto: item.nome,
-          origem: 'Média SEFAZ',
-          mercado: 'Média Estadual SEFAZ',
-          preco: precoCalculado,
-          quantidade: item.quantidade,
-        });
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      comparacao: resultadoComparacao,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ result: JSON.parse(responseText) });
+  } catch (error: any) {
+    console.error('Erro na leitura do folheto:', error);
+    return NextResponse.json({ error: 'Erro ao processar imagem do folheto.' }, { status: 500 });
   }
 }

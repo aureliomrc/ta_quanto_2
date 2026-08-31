@@ -2,98 +2,67 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
-export const dynamic = 'force-dynamic';
+const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
-export async function GET(req: Request) {
+function getUserId(req: Request) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) return null;
+  const token = authHeader.replace('Bearer ', '');
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-    let usuarioId: string | null = null;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-        usuarioId = decoded.id;
-      } catch {}
-    }
-
-    // Busca listas padrão (globais) + listas criadas pelo usuário logado
-    const listas = await prisma.lista.findMany({
-      where: {
-        OR: [
-          { isPadrao: true },
-          ...(usuarioId ? [{ usuarioId }] : []),
-        ],
-      },
-      include: {
-        itens: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    return NextResponse.json({ success: true, listas: listas || [] });
-  } catch (err: any) {
-    console.error('Erro no GET /api/listas:', err);
-    return NextResponse.json({ success: false, listas: [], error: err.message }, { status: 500 });
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    return decoded.id;
+  } catch {
+    return null;
   }
 }
 
+// GET: Buscar todas as listas com seus itens
+export async function GET(req: Request) {
+  try {
+    const usuarioId = getUserId(req);
+    if (!usuarioId) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const listas = await prisma.lista.findMany({
+      where: { usuarioId },
+      include: {
+        itens: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json(listas);
+  } catch (error) {
+    console.error('Erro ao buscar listas:', error);
+    return NextResponse.json({ error: 'Erro ao buscar listas' }, { status: 500 });
+  }
+}
+
+// POST: Criar nova lista
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-    let usuarioId: string | null = null;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-        usuarioId = decoded.id;
-      } catch {}
+    const usuarioId = getUserId(req);
+    if (!usuarioId) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const body = await req.json();
-
-    const nomeNovaLista = body.nomeNovaLista || body.nomeLista || body.nome;
-    const listaId = body.listaId || body.lista_id || body.id;
-    const nomeItem = body.nomeItem || body.produto || body.item || body.nome_item;
-    const quantidade = parseInt(body.quantidade || 1);
-
-    // 1. Criar Nova Lista
-    if (nomeNovaLista && !listaId) {
-      const novaLista = await prisma.lista.create({
-        data: {
-          nome: nomeNovaLista,
-          isPadrao: !usuarioId, // Se não tiver usuário logado, cria como lista padrão
-          usuarioId: usuarioId,
-        },
-        include: {
-          itens: true,
-        },
-      });
-      return NextResponse.json({ success: true, lista: novaLista });
+    const { nome } = await req.json();
+    if (!nome) {
+      return NextResponse.json({ error: 'Nome da lista é obrigatório' }, { status: 400 });
     }
 
-    // 2. Adicionar Item na Lista (seja ela Padrão ou do Usuário)
-    if (listaId && nomeItem) {
-      const novoItem = await prisma.itemLista.create({
-        data: {
-          listaId: listaId,
-          nome: nomeItem,
-          quantidade: quantidade,
-          comprado: false,
-        },
-      });
-      return NextResponse.json({ success: true, item: novoItem });
-    }
+    const novaLista = await prisma.lista.create({
+      data: {
+        nome: nome.toUpperCase(),
+        usuarioId,
+      },
+      include: { itens: true },
+    });
 
-    return NextResponse.json(
-      { error: 'Dados incompletos. Envie nomeNovaLista ou listaId + nomeItem.' },
-      { status: 400 }
-    );
-  } catch (err: any) {
-    console.error('Erro no POST /api/listas:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(novaLista, { status: 201 });
+  } catch (error) {
+    console.error('Erro ao criar lista:', error);
+    return NextResponse.json({ error: 'Erro ao criar lista' }, { status: 500 });
   }
 }

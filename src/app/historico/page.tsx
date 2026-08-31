@@ -1,53 +1,38 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React from 'react';
+import Link from 'next/link';
 
 export default function HistoricoPage() {
-  const [historico, setHistorico] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState('');
-
-  useEffect(() => {
-    async function carregarHistorico() {
-      try {
-        const res = await fetch('/api/historico');
-        const data = await res.json();
-        if (data.success) {
-          setHistorico(data.historico || []);
-        } else {
-          setErro(data.error || 'Erro ao carregar ofertas');
-        }
-      } catch (err: any) {
-        setErro('Falha na comunicação com o servidor.');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    carregarHistorico();
-  }, []);
-
-  if (loading) return <div className="p-8 text-center">Carregando histórico...</div>;
-  if (erro) return <div className="p-8 text-red-500 text-center">{erro}</div>;
-
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Histórico de Ofertas</h1>
-      {historico.length === 0 ? (
-        <p>Nenhuma oferta cadastrada no histórico.</p>
-      ) : (
-        <div className="grid gap-3">
-          {historico.map((item: any) => (
-            <div key={item.id} className="p-4 border rounded shadow-sm flex justify-between">
-              <div>
-                <p className="font-semibold">{item.produto}</p>
-                <p className="text-sm text-gray-500">{item.mercado} - {item.regiao}</p>
-              </div>
-              <p className="font-bold text-green-600">R$ {Number(item.preco).toFixed(2)}</p>
-            </div>
-          ))}
+    <div className="min-h-screen bg-[#f4f6f8] flex flex-col justify-between font-sans">
+      <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🛒</span>
+          <h1 className="text-lg font-black text-[#008744]">Histórico de Compras</h1>
         </div>
-      )}
+      </header>
+
+      <main className="p-4 max-w-lg mx-auto space-y-4 w-full">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center text-slate-500 text-xs">
+          Nenhum histórico registrado ainda.
+        </div>
+      </main>
+
+      <nav className="bg-white border-t border-slate-200 px-8 py-2.5 flex justify-around items-center sticky bottom-0 left-0 right-0 z-10">
+        <Link href="/listas" className="flex flex-col items-center text-slate-400 hover:text-[#008744]">
+          <span className="text-lg">📋</span>
+          <span className="text-[11px] font-bold mt-0.5">Listas</span>
+        </Link>
+        <Link href="/comparar" className="flex flex-col items-center text-slate-400 hover:text-[#008744]">
+          <span className="text-lg">📊</span>
+          <span className="text-[11px] font-bold mt-0.5">Comparar</span>
+        </Link>
+        <Link href="/cupons" className="flex flex-col items-center text-slate-400 hover:text-[#008744]">
+          <span className="text-lg">📜</span>
+          <span className="text-[11px] font-bold mt-0.5">Cupons</span>
+        </Link>
+      </nav>
     </div>
   );
 }

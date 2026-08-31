@@ -97,7 +97,7 @@ export default function CotacaoPrecosPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token || ''}`,
         },
-        body: JSON.stringify({ imageBase64, mercado, regiao }),
+        body: JSON.stringify({ imageBase64: imagemBase64, mercado, regiao }),
       });
 
       const data = await res.json();

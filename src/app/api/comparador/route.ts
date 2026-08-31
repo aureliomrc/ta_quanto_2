@@ -15,17 +15,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Chave GEMINI_API_KEY não encontrada no servidor.' }, { status: 500 });
     }
 
-    // Extrai o MimeType real da imagem (png, jpeg, webp)
     const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    // Modelo definido conforme o seu padrão funcional
-    const nomeModelo = 'gemini-3.6-flash';
-
-    const model = genAI.getGenerativeModel({
-      model: nomeModelo,
-    });
 
     const prompt = `Analise a imagem deste folheto/encarte de ofertas e extraia todos os produtos com seus respetivos preços. 
     Retorne EXCLUSIVAMENTE um array em formato JSON estrito, sem textos explicativos ou blocos adicionais, com o seguinte padrão:
@@ -40,17 +32,42 @@ export async function POST(req: Request) {
       },
     ];
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    // Lista de modelos ordenada por preferência (tenta o principal e depois os alternativos)
+    const modelos = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash-exp'];
+    let result = null;
+    let ultimoErro = null;
+
+    for (const nomeModelo of modelos) {
+      try {
+        const model = genAI.getGenerativeModel({ model: nomeModelo });
+        result = await model.generateContent([prompt, ...imageParts]);
+        if (result) break; // Sucesso, sai do loop
+      } catch (err: any) {
+        console.warn(`Modelo ${nomeModelo} indisponível (${err.status || 'Erro'}). Tentando próximo...`);
+        ultimoErro = err;
+      }
+    }
+
+    if (!result) {
+      throw ultimoErro || new Error('Servidores da IA estão indisponíveis no momento.');
+    }
+
     const responseText = result.response.text();
-
-    // Remove eventuais formatações Markdown da resposta da IA
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-
     const produtos = JSON.parse(cleanedText);
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro detalhado da API Gemini:', error);
+    console.error('Erro detalhado no servidor:', error);
+    
+    // Trata erro 503 especificamente com uma mensagem amigável
+    if (error?.status === 503 || error?.message?.includes('503')) {
+      return NextResponse.json(
+        { error: 'Os servidores da IA estão muito sobrecarregados agora. Por favor, aguarde alguns segundos e tente novamente.' },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { error: error?.message || 'Erro ao processar imagem com a IA.' },
       { status: 500 }

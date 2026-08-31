@@ -32,34 +32,20 @@ export async function POST(req: Request) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise a imagem deste folheto e extraia os produtos com seus preços. 
-    Retorne EXCLUSIVAMENTE um array JSON no padrão: [{"produto": "Arroz 5kg", "preco": 24.90}]`;
+    Retorne EXCLUSIVAMENTE um array JSON no seguinte formato sem texto adicional: [{"produto": "Arroz 5kg", "preco": 24.90}]`;
 
     const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
-    const modelos = ['gemini-2.0-flash', 'gemini-1.5-flash-latest'];
     
-    let result = null;
-    let ultimoErro = null;
-
-    for (const nomeModelo of modelos) {
-      try {
-        const model = genAI.getGenerativeModel({ model: nomeModelo });
-        result = await model.generateContent([prompt, ...imageParts]);
-        if (result) break;
-      } catch (err) {
-        ultimoErro = err;
-      }
-    }
-
-    if (!result) {
-      throw ultimoErro || new Error('IA indisponível.');
-    }
+    // Modelo exato suportado pela sua chave/API Gemini
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const result = await model.generateContent([prompt, ...imageParts]);
 
     const responseText = result.response.text();
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
 
-    // Salva diretamente na tabela 'Oferta' para ficar disponível no banco
-    if (produtos.length > 0) {
+    // Persistência na tabela 'Oferta'
+    if (Array.isArray(produtos) && produtos.length > 0) {
       const prismaAny = prisma as any;
       await prismaAny.oferta.createMany({
         data: produtos.map((p) => ({
@@ -74,7 +60,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro ao processar e salvar oferta:', error);
+    console.error('Erro no Gemini:', error);
     return NextResponse.json({ error: error?.message || 'Erro ao processar imagem.' }, { status: 500 });
   }
 }

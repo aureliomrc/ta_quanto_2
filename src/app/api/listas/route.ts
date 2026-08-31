@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-const ITENS_INICIAIS = [
+const ITENS_PADRAO = [
   'Arroz 5kg',
   'Feijão Carioca 1kg',
   'Óleo de Soja 900ml',
@@ -9,7 +9,7 @@ const ITENS_INICIAIS = [
   'Café Torrado 500g',
   'Leite Integral 1L',
   'Macarrão Espaguete 500g',
-  'Detergente Líquido',
+  'Detergente Líquido 500ml',
   'Sabão em Pó 1kg',
   'Papel Higiênico (12 un)',
 ];
@@ -22,12 +22,15 @@ export async function GET() {
       include: { itens: true },
     });
 
-    if (!lista) {
-      lista = await prismaAny.lista.create({
-        data: { nome: 'Minha Lista de Compras' },
-      });
+    // Se a lista não existir ou estiver vazia, cria a lista pré-preenchida com os 10 itens
+    if (!lista || !lista.itens || lista.itens.length === 0) {
+      if (!lista) {
+        lista = await prismaAny.lista.create({
+          data: { nome: 'Minha Lista de Compras' },
+        });
+      }
 
-      for (const itemNome of ITENS_INICIAIS) {
+      for (const itemNome of ITENS_PADRAO) {
         try {
           await prismaAny.itemLista.create({
             data: { nome: itemNome, quantidade: 1, listaId: lista.id },
@@ -54,9 +57,9 @@ export async function GET() {
     console.error('Erro na rota GET de listas:', error);
     return NextResponse.json(
       {
-        id: 'default',
+        id: '1',
         nome: 'Minha Lista de Compras',
-        itens: ITENS_INICIAIS.map((item, idx) => ({ id: String(idx + 1), nome: item, quantidade: 1 })),
+        itens: ITENS_PADRAO.map((nome, i) => ({ id: String(i + 1), nome, quantidade: 1 })),
       },
       { status: 200 }
     );

@@ -17,6 +17,7 @@ export async function GET(req: Request) {
       } catch {}
     }
 
+    // Busca todas as listas públicas (isPadrao) OU criadas pelo usuário
     const listas = await prisma.lista.findMany({
       where: {
         OR: [
@@ -34,8 +35,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, listas: listas || [] });
   } catch (err: any) {
-    console.error('Erro no GET /api/listas:', err);
-    return NextResponse.json({ success: false, listas: [], error: err.message }, { status: 200 });
+    console.error('Erro GET /api/listas:', err);
+    return NextResponse.json({ success: false, listas: [], error: err.message }, { status: 500 });
   }
 }
 
@@ -67,11 +68,14 @@ export async function POST(req: Request) {
           isPadrao: !usuarioId,
           usuarioId: usuarioId,
         },
+        include: {
+          itens: true,
+        },
       });
       return NextResponse.json({ success: true, lista: novaLista });
     }
 
-    // 2. Adicionar Item na Lista Exista
+    // 2. Adicionar Item na Lista
     if (listaId && nomeItem) {
       const novoItem = await prisma.itemLista.create({
         data: {
@@ -85,11 +89,11 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: 'Envie nomeNovaLista para criar uma lista ou listaId + nomeItem para inserir um item.' },
+      { error: 'Parâmetros inválidos. Envie nomeNovaLista ou listaId + nomeItem.' },
       { status: 400 }
     );
   } catch (err: any) {
-    console.error('Erro no POST /api/listas:', err);
+    console.error('Erro POST /api/listas:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

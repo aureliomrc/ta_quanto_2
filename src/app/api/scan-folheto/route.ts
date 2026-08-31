@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Scan sem usuário logado. Salvando como público.');
+        console.warn('Token inválido no scan. Continuando sem usuarioId.');
       }
     }
 
@@ -39,12 +39,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
+      generationConfig: { responseMimeType: 'application/json' }
+    });
+
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise este folheto do mercado ${mercado}.
-Extraia todos os produtos com seus preços.
-Retorne EXCLUSIVAMENTE um array JSON puro:
+Extraia todos os produtos com seus respectivos preços.
+Retorne um JSON no formato array de objetos:
 [{"produto": "Nome do Produto", "preco": 10.50}]`;
 
     const result = await model.generateContent([
@@ -56,16 +60,17 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
     let ofertasExtraidas: { produto: string; preco: number }[] = [];
 
     try {
+      ofertasExtraidas = JSON.parse(rawText);
+    } catch (e) {
       const jsonStart = rawText.indexOf('[');
       const jsonEnd = rawText.lastIndexOf(']') + 1;
-      const cleanJson = rawText.substring(jsonStart, jsonEnd);
-      ofertasExtraidas = JSON.parse(cleanJson);
-    } catch (e) {
-      return NextResponse.json({ error: 'Erro ao interpretar dados do folheto.' }, { status: 422 });
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        ofertasExtraidas = JSON.parse(rawText.substring(jsonStart, jsonEnd));
+      }
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
-      return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
+      return NextResponse.json({ error: 'Nenhum produto identificado no folheto.' }, { status: 422 });
     }
 
     const ofertasSalvas = [];
@@ -82,8 +87,8 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
           },
         });
         ofertasSalvas.push(novaOferta);
-      } catch (dbError) {
-        console.error('Erro ao salvar item no banco:', dbError);
+      } catch (dbErr) {
+        console.error('Erro ao salvar item da oferta no banco:', dbErr);
       }
     }
 
@@ -93,7 +98,7 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       itens: ofertasSalvas,
     });
   } catch (error: any) {
-    console.error('Erro no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro ao processar folheto.' }, { status: 500 });
+    console.error('Erro crítico no scan-folheto:', error);
+    return NextResponse.json({ error: error.message || 'Erro interno ao processar imagem.' }, { status: 500 });
   }
 }

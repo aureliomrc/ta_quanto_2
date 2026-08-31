@@ -9,7 +9,7 @@ export async function GET() {
       orderBy: {
         createdAt: 'desc',
       },
-      take: 100,
+      take: 200,
     });
 
     return NextResponse.json({ 
@@ -22,6 +22,6 @@ export async function GET() {
       success: false, 
       historico: [], 
       error: err.message || 'Erro ao carregar histórico.' 
-    }, { status: 200 });
+    }, { status: 500 });
   }
 }

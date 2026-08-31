@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +20,6 @@ export async function GET() {
     });
   } catch (err: any) {
     console.error('Erro ao buscar histórico:', err);
-    // Retorna um array vazio em caso de erro para não quebrar a tela do front-end
     return NextResponse.json({ 
       success: false, 
       historico: [], 

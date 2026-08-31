@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Scan sem usuário logado. Salvando publicamente.');
+        console.warn('Scan sem usuário logado. Salvando como público.');
       }
     }
 
@@ -39,7 +39,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    // Modelo corrigido para versão compatível
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise este folheto do mercado ${mercado}.
@@ -68,20 +69,21 @@ Retorne EXCLUSIVAMENTE um array JSON puro:
       return NextResponse.json({ error: 'Nenhum produto identificado.' }, { status: 422 });
     }
 
-    // Gravação no Prisma
-    const ofertasSalvas = await prisma.$transaction(
-      ofertasExtraidas.map((item) =>
-        prisma.oferta.create({
-          data: {
-            mercado,
-            regiao: regiaoEnum,
-            produto: item.produto || 'Produto Sem Nome',
-            preco: parseFloat(String(item.preco || 0)),
-            usuarioId: usuarioId,
-          },
-        })
-      )
-    );
+    // Gravação resiliente no Prisma
+    const ofertasSalvas = [];
+    for (const item of ofertasExtraidas) {
+      const precoNum = parseFloat(String(item.preco).replace(',', '.')) || 0;
+      const novaOferta = await prisma.oferta.create({
+        data: {
+          mercado,
+          regiao: regiaoEnum,
+          produto: item.produto || 'Produto Sem Nome',
+          preco: precoNum,
+          usuarioId: usuarioId,
+        },
+      });
+      ofertasSalvas.push(novaOferta);
+    }
 
     return NextResponse.json({
       success: true,

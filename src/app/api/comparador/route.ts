@@ -1,11 +1,27 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { prisma } from '@/lib/prisma';
+import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+
+function getUserId(req: Request) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) return null;
+  try {
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    return decoded.id;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: Request) {
   try {
-    const { imageBase64 } = await req.json();
+    const usuarioId = getUserId(req);
+    const { imageBase64, mercado, regiao } = await req.json();
 
     if (!imageBase64) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
@@ -19,20 +35,11 @@ export async function POST(req: Request) {
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const prompt = `Analise a imagem deste folheto/encarte de ofertas e extraia todos os produtos com seus respetivos preços. 
-    Retorne EXCLUSIVAMENTE um array em formato JSON estrito, sem textos explicativos ou blocos adicionais, com o seguinte padrão:
-    [{"produto": "Nome do Produto", "preco": 10.90}]`;
+    const prompt = `Analise a imagem deste folheto de ofertas e extraia os produtos com seus preços. 
+    Retorne EXCLUSIVAMENTE um array JSON no padrão: [{"produto": "Nome do Produto", "preco": 10.90}]`;
 
-    const imageParts = [
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType,
-        },
-      },
-    ];
+    const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
 
-    // Lista de modelos ordenada por preferência (tenta o principal e depois os alternativos)
     const modelos = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash-exp'];
     let result = null;
     let ultimoErro = null;
@@ -41,35 +48,42 @@ export async function POST(req: Request) {
       try {
         const model = genAI.getGenerativeModel({ model: nomeModelo });
         result = await model.generateContent([prompt, ...imageParts]);
-        if (result) break; // Sucesso, sai do loop
+        if (result) break;
       } catch (err: any) {
-        console.warn(`Modelo ${nomeModelo} indisponível (${err.status || 'Erro'}). Tentando próximo...`);
         ultimoErro = err;
       }
     }
 
     if (!result) {
-      throw ultimoErro || new Error('Servidores da IA estão indisponíveis no momento.');
+      throw ultimoErro || new Error('Servidores de IA indisponíveis.');
     }
 
     const responseText = result.response.text();
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const produtos = JSON.parse(cleanedText);
+    const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
+
+    // Salva no banco de dados para o Histórico se o usuário estiver logado
+    if (usuarioId && produtos.length > 0) {
+      await prisma.historicoFolheto.create({
+        data: {
+          usuarioId,
+          mercado: mercado || 'Não informado',
+          regiao: regiao || 'SUDESTE',
+          itens: {
+            create: produtos.map((p) => ({
+              produto: p.produto.toUpperCase(),
+              preco: p.preco,
+            })),
+          },
+        },
+      });
+    }
 
     return NextResponse.json({ result: produtos });
   } catch (error: any) {
-    console.error('Erro detalhado no servidor:', error);
-    
-    // Trata erro 503 especificamente com uma mensagem amigável
-    if (error?.status === 503 || error?.message?.includes('503')) {
-      return NextResponse.json(
-        { error: 'Os servidores da IA estão muito sobrecarregados agora. Por favor, aguarde alguns segundos e tente novamente.' },
-        { status: 503 }
-      );
-    }
-
+    console.error('Erro no processamento:', error);
     return NextResponse.json(
-      { error: error?.message || 'Erro ao processar imagem com a IA.' },
+      { error: error?.message || 'Erro ao processar imagem.' },
       { status: 500 }
     );
   }

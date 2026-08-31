@@ -16,7 +16,6 @@ export default function CotacaoPrecosPage() {
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [streamAtivo, setStreamAtivo] = useState(false);
-  const [produtosExtraidos, setProdutosExtraidos] = useState<{ produto: string; preco: number }[]>([]);
   const [comparativoMercados, setComparativoMercados] = useState<ComparativoMercado[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -89,8 +88,7 @@ export default function CotacaoPrecosPage() {
     const token = localStorage.getItem('token');
 
     setCarregando(true);
-    setMensagem('Analisando ofertas com a IA...');
-    setProdutosExtraidos([]);
+    setMensagem('Analisando ofertas e salvando no banco público...');
 
     try {
       const res = await fetch('/api/comparador', {
@@ -99,16 +97,14 @@ export default function CotacaoPrecosPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token || ''}`,
         },
-        body: JSON.stringify({ imageBase64: imagemBase64, mercado, regiao }),
+        body: JSON.stringify({ imageBase64, mercado, regiao }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.result) {
-        setProdutosExtraidos(data.result);
-        setMensagem(`✅ Sucesso! ${data.result.length || 0} oferta(s) identificada(s)!`);
+        setMensagem(`✅ Oferta salva com sucesso no banco de dados!`);
         setImagemBase64(null);
-
         gerarComparativo(data.result);
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);

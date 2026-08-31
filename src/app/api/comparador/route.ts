@@ -39,8 +39,8 @@ export async function POST(req: Request) {
     Retorne EXCLUSIVAMENTE um array JSON no padrão: [{"produto": "Nome do Produto", "preco": 10.90}]`;
 
     const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
-
     const modelos = ['gemini-3.6-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash-exp'];
+    
     let result = null;
     let ultimoErro = null;
 
@@ -62,27 +62,23 @@ export async function POST(req: Request) {
     const cleanedText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const produtos: { produto: string; preco: number }[] = JSON.parse(cleanedText);
 
-    // Salva no banco de dados se a tabela existir no prisma client
-    if (usuarioId && produtos.length > 0) {
-      try {
-        const prismaAny = prisma as any;
-        if (prismaAny.historicoFolheto) {
-          await prismaAny.historicoFolheto.create({
-            data: {
-              usuarioId,
-              mercado: mercado || 'Não informado',
-              regiao: regiao || 'SUDESTE',
-              itens: {
-                create: produtos.map((p) => ({
-                  produto: String(p.produto).toUpperCase(),
-                  preco: Number(p.preco),
-                })),
-              },
+    // Persiste no banco Prisma compartilhado
+    if (produtos.length > 0) {
+      const prismaAny = prisma as any;
+      if (prismaAny.historicoFolheto) {
+        await prismaAny.historicoFolheto.create({
+          data: {
+            usuarioId: usuarioId || null,
+            mercado: mercado || 'Não informado',
+            regiao: regiao || 'SUDESTE',
+            itens: {
+              create: produtos.map((p) => ({
+                produto: String(p.produto).toUpperCase(),
+                preco: Number(p.preco),
+              })),
             },
-          });
-        }
-      } catch (dbError) {
-        console.warn('Aviso: Não foi possível salvar no histórico (tabela Prisma ausente):', dbError);
+          },
+        });
       }
     }
 

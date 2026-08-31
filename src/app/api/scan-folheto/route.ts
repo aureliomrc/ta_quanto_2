@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch (err) {
-        console.warn('Token inválido no scan. Continuando sem usuarioId.');
+        console.warn('Scan executado sem usuário logado.');
       }
     }
 
@@ -39,16 +39,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: { responseMimeType: 'application/json' }
-    });
-
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
 
     const prompt = `Analise este folheto do mercado ${mercado}.
-Extraia todos os produtos com seus respectivos preços.
-Retorne um JSON no formato array de objetos:
+Extraia todos os produtos com seus preços.
+Retorne EXCLUSIVAMENTE um array JSON puro:
 [{"produto": "Nome do Produto", "preco": 10.50}]`;
 
     const result = await model.generateContent([
@@ -60,13 +56,12 @@ Retorne um JSON no formato array de objetos:
     let ofertasExtraidas: { produto: string; preco: number }[] = [];
 
     try {
-      ofertasExtraidas = JSON.parse(rawText);
-    } catch (e) {
       const jsonStart = rawText.indexOf('[');
       const jsonEnd = rawText.lastIndexOf(']') + 1;
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        ofertasExtraidas = JSON.parse(rawText.substring(jsonStart, jsonEnd));
-      }
+      const cleanJson = rawText.substring(jsonStart, jsonEnd);
+      ofertasExtraidas = JSON.parse(cleanJson);
+    } catch (e) {
+      return NextResponse.json({ error: 'Erro ao interpretar resposta da IA.' }, { status: 422 });
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
@@ -88,7 +83,7 @@ Retorne um JSON no formato array de objetos:
         });
         ofertasSalvas.push(novaOferta);
       } catch (dbErr) {
-        console.error('Erro ao salvar item da oferta no banco:', dbErr);
+        console.error('Erro ao gravar oferta:', dbErr);
       }
     }
 
@@ -98,7 +93,7 @@ Retorne um JSON no formato array de objetos:
       itens: ofertasSalvas,
     });
   } catch (error: any) {
-    console.error('Erro crítico no scan-folheto:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno ao processar imagem.' }, { status: 500 });
+    console.error('Erro no scan-folheto:', error);
+    return NextResponse.json({ error: error.message || 'Erro ao processar folheto.' }, { status: 500 });
   }
 }

@@ -6,15 +6,14 @@ import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Schema com tipagem estrita 'ResponseSchema' para passar no build do TypeScript
 const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
-  description: 'Lista de produtos e preços encontrados na imagem',
+  description: 'Lista de produtos e preços encontrados no folheto',
   items: {
     type: SchemaType.OBJECT,
     properties: {
       produto: { type: SchemaType.STRING, description: 'Nome do produto' },
-      preco: { type: SchemaType.NUMBER, description: 'Preço promocional numérico' },
+      preco: { type: SchemaType.NUMBER, description: 'Preço numérico' },
     },
     required: ['produto', 'preco'],
   },
@@ -47,14 +46,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Você precisa estar logado.' }, { status: 401 });
     }
 
-    // 2. Leitura dos dados recebidos
-    const { imagemBase64, mercado, regiao } = await req.json();
+    // 2. Leitura ultra-rápida via multipart FormData (sem string Base64 gigante)
+    const formData = await req.formData();
+    const file = formData.get('file') as Blob | null;
+    const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
+    const regiao = (formData.get('regiao') as string) || 'SUDESTE';
 
-    if (!imagemBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem foi capturada.' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
-    // 3. Configuração do Gemini 2.5 Flash com schema fortemente tipado
+    // Converter Blob diretamente para Buffer sem parsing pesado
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // 3. Configurar modelo Gemini 2.5 Flash
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
@@ -64,16 +70,14 @@ export async function POST(req: Request) {
       },
     });
 
-    const base64Clean = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
+    const prompt = `Extraia os produtos e preços promocionais do mercado "${mercado}". Ignore textos secundários.`;
 
-    const prompt = `Extraia todos os produtos e preços visíveis da imagem/folheto do mercado "${mercado || 'Supermercado'}". Ignore textos decorativos.`;
-
-    // 4. Chamada ultrarrápida da API
+    // 4. Chamada direta enviando o buffer comprimido
     const result = await model.generateContent([
       prompt,
       {
         inlineData: {
-          data: base64Clean,
+          data: buffer.toString('base64'),
           mimeType: 'image/jpeg',
         },
       },
@@ -86,22 +90,22 @@ export async function POST(req: Request) {
       ofertasExtraidas = JSON.parse(responseText);
     } catch {
       return NextResponse.json(
-        { error: 'Não foi possível ler os produtos. Tente uma foto com melhor enquadramento.' },
+        { error: 'Não foi possível ler os produtos. Enquadre melhor a foto.' },
         { status: 422 }
       );
     }
 
     if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
       return NextResponse.json(
-        { error: 'Nenhum produto com preço foi identificado nesta imagem.' },
+        { error: 'Nenhum produto identificado nesta imagem.' },
         { status: 422 }
       );
     }
 
-    // 5. Inserção no Banco de Dados
+    // 5. Salvar no Banco
     const regiaoEnum = normalizarRegiao(regiao);
     const dadosParaInserir = ofertasExtraidas.map((item) => ({
-      mercado: mercado || 'Mercado Geral',
+      mercado: mercado,
       regiao: regiaoEnum,
       produto: item.produto || 'Produto Sem Nome',
       preco: Number(item.preco) || 0,
@@ -118,9 +122,9 @@ export async function POST(req: Request) {
       itens: dadosParaInserir,
     });
   } catch (error: any) {
-    console.error('Erro no processamento do folheto:', error);
+    console.error('Erro na rota scan-folheto:', error);
     return NextResponse.json(
-      { error: error.message || 'Falha ao processar imagem no servidor.' },
+      { error: error.message || 'Erro ao processar imagem.' },
       { status: 500 }
     );
   }

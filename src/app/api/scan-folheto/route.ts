@@ -1,26 +1,27 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
-import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
-  description: 'Lista com no máximo 15 produtos e preços em destaque',
+  description: 'Lista de produtos e preços em destaque',
   items: {
     type: SchemaType.OBJECT,
     properties: {
-      produto: { type: SchemaType.STRING, description: 'Nome legível do produto' },
-      preco: { type: SchemaType.NUMBER, description: 'Preço numérico promocional' },
+      produto: { type: SchemaType.STRING, description: 'Nome do produto' },
+      preco: { type: SchemaType.NUMBER, description: 'Preço numérico' },
     },
     required: ['produto', 'preco'],
   },
 };
 
 export async function POST(req: Request) {
+  // Inicia a contagem total
+  console.time('⏱️ Tempo TOTAL da requisição');
+
   try {
-    // 1. Validação rápida de Token
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
@@ -34,10 +35,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
     }
 
-    // 2. Leitura dos dados multipart
+    // 1. Medir o tempo para receber a imagem do cliente
+    console.time('📸 1. Receber e converter imagem');
     const formData = await req.formData();
     const file = formData.get('file') as Blob | null;
-    const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
+    const mercado = (formData.get('mercado') as string) || 'Mercado';
 
     if (!file) {
       return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
@@ -45,21 +47,23 @@ export async function POST(req: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.timeEnd('📸 1. Receber e converter imagem');
 
-    // 3. Configuração ultra-rápida do Gemini
+    // Configuração do Gemini
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       generationConfig: {
         temperature: 0.0,
-        maxOutputTokens: 1000, // Limita geração longa para cortar tempo de resposta
+        maxOutputTokens: 1000,
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       },
     });
 
-    // Prompt focado apenas nos itens em destaque (reduz o tempo de geração de texto)
-    const prompt = `Extraia no máximo 15 produtos e preços em maior destaque do mercado "${mercado}". Seja direto.`;
+    const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
 
+    // 2. Medir o tempo de resposta da API do Gemini
+    console.time('🤖 2. Processamento IA (Gemini API)');
     const result = await model.generateContent([
       prompt,
       {
@@ -69,20 +73,23 @@ export async function POST(req: Request) {
         },
       },
     ]);
+    console.timeEnd('🤖 2. Processamento IA (Gemini API)');
 
     const responseText = result.response.text();
     const ofertasExtraidas = JSON.parse(responseText);
 
-    // 4. Retorna direto para a tela sem perder tempo com inserção síncrona no banco
+    console.timeEnd('⏱️ Tempo TOTAL da requisição');
+
     return NextResponse.json({
       success: true,
       totalProcessados: ofertasExtraidas.length,
       itens: ofertasExtraidas,
     });
   } catch (error: any) {
-    console.error('Erro na extração rápida:', error);
+    console.timeEnd('⏱️ Tempo TOTAL da requisição');
+    console.error('Erro na extração:', error);
     return NextResponse.json(
-      { error: 'Erro ao processar imagem. Tente uma foto com menos produtos.' },
+      { error: error.message || 'Erro ao processar imagem.' },
       { status: 500 }
     );
   }

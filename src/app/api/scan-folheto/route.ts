@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
 import { Regiao } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Schema estruturado forçado diretamente no motor da API do Gemini
-const responseSchema = {
+// Schema com tipagem estrita 'ResponseSchema' para passar no build do TypeScript
+const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
   description: 'Lista de produtos e preços encontrados na imagem',
   items: {
@@ -54,11 +54,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi capturada.' }, { status: 400 });
     }
 
-    // 3. Configuração do Gemini 2.5 Flash com schema forçado
+    // 3. Configuração do Gemini 2.5 Flash com schema fortemente tipado
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
-        temperature: 0.0, // Retorno mais rápido e determinístico
+        temperature: 0.0,
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       },

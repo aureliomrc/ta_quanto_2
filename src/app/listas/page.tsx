@@ -81,6 +81,7 @@ export default function ListasPage() {
     }
   };
 
+  // --- AÇÃO OTIMISTA (SEM DELAY NA INTERFACE) ---
   const handleAcaoItem = async (
     e?: React.FormEvent,
     acao: 'ADD_ITEM' | 'UPDATE_QTD' | 'DELETE_ITEM' = 'ADD_ITEM',
@@ -89,9 +90,44 @@ export default function ListasPage() {
     if (e) e.preventDefault();
     if (!listaAtual) return;
 
-    const itemTexto = payload.nomeItem || novoItemNome;
-    if (acao === 'ADD_ITEM' && !itemTexto.trim()) return;
+    const itemTexto = (payload.nomeItem || novoItemNome).trim();
+    if (acao === 'ADD_ITEM' && !itemTexto) return;
 
+    // Guarda o estado anterior caso precise reverter
+    const estadoAnterior = [...listas];
+
+    // 1. ATUALIZAÇÃO OTIMISTA INSTANTÂNEA NA INTERFACE
+    if (listaAtual.usuarioId !== null || (acao !== 'ADD_ITEM' && listaAtual.nome !== 'Lista Dieese')) {
+      setListas((prevListas) =>
+        prevListas.map((l) => {
+          if (l.id !== listaAtual.id) return l;
+
+          let novosItens = [...(l.itens || [])];
+
+          if (acao === 'ADD_ITEM') {
+            novosItens.push({
+              id: `temp-${Date.now()}`,
+              nome: itemTexto,
+              quantidade: 1,
+            });
+          } else if (acao === 'UPDATE_QTD') {
+            novosItens = novosItens.map((i) =>
+              i.id === payload.itemId
+                ? { ...i, quantidade: Math.max(1, payload.quantidade) }
+                : i
+            );
+          } else if (acao === 'DELETE_ITEM') {
+            novosItens = novosItens.filter((i) => i.id !== payload.itemId);
+          }
+
+          return { ...l, itens: novosItens };
+        })
+      );
+    }
+
+    if (acao === 'ADD_ITEM') setNovoItemNome('');
+
+    // 2. ENVIO EM SEGUNDO PLANO PARA O SERVIDOR
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/listas', {
@@ -110,13 +146,28 @@ export default function ListasPage() {
 
       if (res.ok) {
         const listaRetornada = await res.json();
-        if (acao === 'ADD_ITEM') setNovoItemNome('');
-        await carregarListas(listaRetornada.id);
+
+        // Se for a clonagem da Lista Dieese ou alteração de ID, sincroniza com os dados reais
+        setListas((prevListas) => {
+          const index = prevListas.findIndex((l) => l.id === listaAtual.id);
+          if (index !== -1) {
+            const copia = [...prevListas];
+            copia[index] = listaRetornada;
+            return copia;
+          }
+          return [...prevListas, listaRetornada];
+        });
+
+        if (listaAtual.usuarioId === null && listaAtual.nome === 'Lista Dieese') {
+          setListaAtivaId(listaRetornada.id);
+        }
       } else {
-        alert('Erro ao processar item na lista. Tente novamente.');
+        // Se falhou no backend, restaura a tela como estava
+        setListas(estadoAnterior);
       }
     } catch (err) {
-      console.error('Erro ao processar ação no item:', err);
+      console.error('Erro na sincronização em segundo plano:', err);
+      setListas(estadoAnterior);
     }
   };
 
@@ -148,7 +199,7 @@ export default function ListasPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* Topo */}
+        {/* Header */}
         <header className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-2xl">📋</span>
@@ -164,7 +215,7 @@ export default function ListasPage() {
           </button>
         </header>
 
-        {/* Input para Criar Lista */}
+        {/* Form Criar Lista */}
         {criandoLista && (
           <form
             onSubmit={handleCriarLista}
@@ -186,7 +237,7 @@ export default function ListasPage() {
           </form>
         )}
 
-        {/* Botões das Listas Disponíveis */}
+        {/* Abas de Listas */}
         {listas.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {listas.map((l) => (
@@ -205,7 +256,7 @@ export default function ListasPage() {
           </div>
         )}
 
-        {/* Formulário do Botão Adicionar Item */}
+        {/* Input Adicionar Item */}
         <form
           onSubmit={(e) => handleAcaoItem(e, 'ADD_ITEM')}
           className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex gap-2"
@@ -219,13 +270,13 @@ export default function ListasPage() {
           />
           <button
             type="submit"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all active:scale-95"
           >
             Adicionar
           </button>
         </form>
 
-        {/* Corpo da Lista */}
+        {/* Conteúdo da Lista */}
         {carregando ? (
           <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-500 shadow-sm">
             Carregando lista...
@@ -290,7 +341,7 @@ export default function ListasPage() {
                               quantidade: (item.quantidade || 1) - 1,
                             })
                           }
-                          className="w-6 h-6 bg-slate-100 text-slate-700 rounded-lg font-black hover:bg-slate-200 flex items-center justify-center text-xs"
+                          className="w-6 h-6 bg-slate-100 text-slate-700 rounded-lg font-black hover:bg-slate-200 flex items-center justify-center text-xs active:scale-95 transition-transform"
                         >
                           -
                         </button>
@@ -305,14 +356,14 @@ export default function ListasPage() {
                               quantidade: (item.quantidade || 1) + 1,
                             })
                           }
-                          className="w-6 h-6 bg-slate-100 text-slate-700 rounded-lg font-black hover:bg-slate-200 flex items-center justify-center text-xs"
+                          className="w-6 h-6 bg-slate-100 text-slate-700 rounded-lg font-black hover:bg-slate-200 flex items-center justify-center text-xs active:scale-95 transition-transform"
                         >
                           +
                         </button>
                         <button
                           type="button"
                           onClick={() => handleAcaoItem(undefined, 'DELETE_ITEM', { itemId: item.id })}
-                          className="text-slate-400 hover:text-red-600 font-bold ml-1 text-xs"
+                          className="text-slate-400 hover:text-red-600 font-bold ml-1 text-xs p-1"
                           title="Remover Item"
                         >
                           ✕
@@ -327,7 +378,7 @@ export default function ListasPage() {
         )}
       </div>
 
-      {/* Navegação */}
+      {/* Navegação Rodapé */}
       <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
         <Link href="/listas" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
           <span>📋</span> Listas

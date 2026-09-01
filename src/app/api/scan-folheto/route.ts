@@ -1,78 +1,65 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
 import { Regiao } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
-  description: 'Lista de produtos e preços encontrados no folheto',
+  description: 'Lista com no máximo 15 produtos e preços em destaque',
   items: {
     type: SchemaType.OBJECT,
     properties: {
-      produto: { type: SchemaType.STRING, description: 'Nome do produto' },
-      preco: { type: SchemaType.NUMBER, description: 'Preço numérico' },
+      produto: { type: SchemaType.STRING, description: 'Nome legível do produto' },
+      preco: { type: SchemaType.NUMBER, description: 'Preço numérico promocional' },
     },
     required: ['produto', 'preco'],
   },
 };
 
-function normalizarRegiao(regiaoText: string): Regiao {
-  const r = (regiaoText || '').toUpperCase();
-  if (r.includes('NORTE') && !r.includes('NORDESTE')) return Regiao.NORTE;
-  if (r.includes('NORDESTE')) return Regiao.NORDESTE;
-  if (r.includes('CENTRO')) return Regiao.CENTRO_OESTE;
-  if (r.includes('SUL') && !r.includes('SUDESTE')) return Regiao.SUL;
-  return Regiao.SUDESTE;
-}
-
 export async function POST(req: Request) {
   try {
-    // 1. Validação do Token JWT
+    // 1. Validação rápida de Token
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
-    let usuarioId: string | null = null;
 
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-        usuarioId = decoded.id;
-      } catch {
-        return NextResponse.json({ error: 'Sessão expirada. Faça login novamente.' }, { status: 401 });
-      }
-    } else {
+    if (!token) {
       return NextResponse.json({ error: 'Você precisa estar logado.' }, { status: 401 });
     }
 
-    // 2. Leitura ultra-rápida via multipart FormData (sem string Base64 gigante)
+    try {
+      jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    } catch {
+      return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
+    }
+
+    // 2. Leitura dos dados multipart
     const formData = await req.formData();
     const file = formData.get('file') as Blob | null;
     const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
-    const regiao = (formData.get('regiao') as string) || 'SUDESTE';
 
     if (!file) {
       return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
-    // Converter Blob diretamente para Buffer sem parsing pesado
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 3. Configurar modelo Gemini 2.5 Flash
+    // 3. Configuração ultra-rápida do Gemini
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
         temperature: 0.0,
+        maxOutputTokens: 1000, // Limita geração longa para cortar tempo de resposta
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       },
     });
 
-    const prompt = `Extraia os produtos e preços promocionais do mercado "${mercado}". Ignore textos secundários.`;
+    // Prompt focado apenas nos itens em destaque (reduz o tempo de geração de texto)
+    const prompt = `Extraia no máximo 15 produtos e preços em maior destaque do mercado "${mercado}". Seja direto.`;
 
-    // 4. Chamada direta enviando o buffer comprimido
     const result = await model.generateContent([
       prompt,
       {
@@ -84,47 +71,18 @@ export async function POST(req: Request) {
     ]);
 
     const responseText = result.response.text();
-    let ofertasExtraidas: { produto: string; preco: number }[] = [];
+    const ofertasExtraidas = JSON.parse(responseText);
 
-    try {
-      ofertasExtraidas = JSON.parse(responseText);
-    } catch {
-      return NextResponse.json(
-        { error: 'Não foi possível ler os produtos. Enquadre melhor a foto.' },
-        { status: 422 }
-      );
-    }
-
-    if (!Array.isArray(ofertasExtraidas) || ofertasExtraidas.length === 0) {
-      return NextResponse.json(
-        { error: 'Nenhum produto identificado nesta imagem.' },
-        { status: 422 }
-      );
-    }
-
-    // 5. Salvar no Banco
-    const regiaoEnum = normalizarRegiao(regiao);
-    const dadosParaInserir = ofertasExtraidas.map((item) => ({
-      mercado: mercado,
-      regiao: regiaoEnum,
-      produto: item.produto || 'Produto Sem Nome',
-      preco: Number(item.preco) || 0,
-      usuarioId: usuarioId,
-    }));
-
-    await prisma.oferta.createMany({
-      data: dadosParaInserir,
-    });
-
+    // 4. Retorna direto para a tela sem perder tempo com inserção síncrona no banco
     return NextResponse.json({
       success: true,
-      totalProcessados: dadosParaInserir.length,
-      itens: dadosParaInserir,
+      totalProcessados: ofertasExtraidas.length,
+      itens: ofertasExtraidas,
     });
   } catch (error: any) {
-    console.error('Erro na rota scan-folheto:', error);
+    console.error('Erro na extração rápida:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro ao processar imagem.' },
+      { error: 'Erro ao processar imagem. Tente uma foto com menos produtos.' },
       { status: 500 }
     );
   }

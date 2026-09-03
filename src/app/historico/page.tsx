@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Trash2, ScanCheck, Building2 } from 'lucide-react';
+import { Trash2, Scan, Building2 } from 'lucide-react';
 
 interface ComparacaoData {
   mercados: string[];
@@ -18,7 +18,6 @@ interface ComparacaoData {
   totais: Array<{ mercado: string; total: number }>;
 }
 
-// A exportação DEVE conter o 'default' para o Next.js reconhecer como página
 export default function HistoricoPage() {
   const [listas, setListas] = useState<any[]>([]);
   const [listaSelecionada, setListaSelecionada] = useState('');
@@ -168,7 +167,7 @@ export default function HistoricoPage() {
                         <div className="mt-2 flex items-center gap-1.5 text-xs">
                           {of.origem === 'SCANNER' ? (
                             <>
-                              <ScanCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <Scan className="w-3.5 h-3.5 text-emerald-600" />
                               <span className="font-semibold text-emerald-700">Folheto / Scan</span>
                             </>
                           ) : (

@@ -73,10 +73,9 @@ export async function POST(req: Request) {
     const responseText = result.response.text();
     const ofertasExtraidas = JSON.parse(responseText);
 
-    // Expira em exatamente 72 horas a partir de agora
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
-    // Salva automaticamente as ofertas escaneadas no banco de dados
+    // Salva no banco de dados com a sintaxe corrigida
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
       await prisma.oferta.createMany({
         data: ofertasExtraidas.map((item: any) => ({
@@ -88,7 +87,7 @@ export async function POST(req: Request) {
           usuarioId: usuarioId,
           expiresAt: expiresAt,
         })),
-      }));
+      });
     }
 
     return NextResponse.json({

@@ -15,6 +15,11 @@ enum Regiao {
   SUL
 }
 
+enum OrigemOferta {
+  SCANNER
+  SEFAZ
+}
+
 model Usuario {
   id        String   @id @default(cuid())
   nome      String
@@ -37,22 +42,29 @@ model Lista {
 }
 
 model ItemLista {
-  id        String  @id @default(cuid())
-  listaId   String
-  lista     Lista   @relation(fields: [listaId], references: [id], onDelete: Cascade)
-  nome      String
-  quantidade Int    @default(1)
-  comprado  Boolean @default(false)
+  id            String  @id @default(cuid())
+  listaId       String
+  lista         Lista   @relation(fields: [listaId], references: [id], onDelete: Cascade)
+  nome          String
+  quantidade    Int     @default(1)
+  comprado      Boolean @default(false)
+  precoEstimado Float?  @default(0.0)
 }
 
 model Oferta {
-  id        String    @id @default(cuid())
+  id        String       @id @default(cuid())
   mercado   String
   regiao    Regiao
   validade  DateTime?
   produto   String
   preco     Float
+  origem    OrigemOferta @default(SCANNER)
+  expiresAt DateTime?    // Define a data limite das 72 horas para exclusão/ocultação do histórico
   usuarioId String?
-  usuario   Usuario?  @relation(fields: [usuarioId], references: [id])
-  createdAt DateTime  @default(now())
+  usuario   Usuario?     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@index([usuarioId])
+  @@index([regiao, mercado])
+  @@index([expiresAt])
 }

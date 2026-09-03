@@ -55,6 +55,6 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true, message: 'Item excluído com sucesso' });
   } catch (error) {
-    return NextResponse.json({ error: 'Erro ao excluir item' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro a excluir item' }, { status: 500 });
   }
 }

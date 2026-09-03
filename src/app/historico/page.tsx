@@ -1,114 +1,231 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { Regiao } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+'use client';
 
-// Mercado de fallback caso a região não possua 3 mercados com scans válidos
-const MERCADOS_FALLBACK_POR_REGIAO: Record<string, string[]> = {
-  SUDESTE: ['Carrefour', 'Pão de Açúcar', 'Extra'],
-  SUL: ['Zaffari', 'Muffato', 'Bistek'],
-  NORDESTE: ['GBarbosa', 'Atacadão', 'Assaí'],
-  NORTE: ['Supermercados DB', 'Atacadão', 'Mateus'],
-  CENTRO_OESTE: ['Comper', 'Atacadão', 'Assaí'],
-};
+import React, { useState, useEffect } from 'react';
+import { Trash2, ScanCheck, Building2 } from 'lucide-react';
 
-export async function POST(req: Request) {
-  try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+interface ComparacaoData {
+  mercados: string[];
+  itens: Array<{
+    produto: string;
+    quantidade: number;
+    ofertas: Array<{
+      mercado: string;
+      preco: number;
+      origem: 'SCANNER' | 'SEFAZ';
+      mensagem: string;
+    }>;
+  }>;
+  totais: Array<{ mercado: string; total: number }>;
+}
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    const { listaId, regiao } = await req.json();
+// A exportação DEVE conter o 'default' para o Next.js reconhecer como página
+export default function HistoricoPage() {
+  const [listas, setListas] = useState<any[]>([]);
+  const [listaSelecionada, setListaSelecionada] = useState('');
+  const [regiao, setRegiao] = useState('SUDESTE');
+  const [comparacao, setComparacao] = useState<ComparacaoData | null>(null);
+  const [historico, setHistorico] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-    if (!listaId || !regiao) {
-      return NextResponse.json({ error: 'Lista e Região são obrigatórios' }, { status: 400 });
+  useEffect(() => {
+    carregarListas();
+    carregarHistorico();
+  }, []);
+
+  const carregarListas = async () => {
+    try {
+      const res = await fetch('/api/listas');
+      const data = await res.json();
+      if (Array.isArray(data)) setListas(data);
+    } catch (e) {
+      console.error(e);
     }
+  };
 
-    // 1. Busca os produtos da lista selecionada
-    const lista = await prisma.lista.findUnique({
-      where: { id: listaId },
-      include: { itens: true },
-    });
-
-    if (!lista || lista.itens.length === 0) {
-      return NextResponse.json({ error: 'Lista vazia ou não encontrada' }, { status: 404 });
+  const carregarHistorico = async () => {
+    try {
+      const res = await fetch('/api/historico');
+      const data = await res.json();
+      if (Array.isArray(data)) setHistorico(data);
+    } catch (e) {
+      console.error(e);
     }
+  };
 
-    const agora = new Date();
+  const excluirItemHistorico = async (id: string) => {
+    await fetch(`/api/historico?id=${id}`, { method: 'DELETE' });
+    carregarHistorico();
+  };
 
-    // 2. Busca ofertas escaneadas recentes (últimas 72h) na região informada
-    const ofertasRecentes = await prisma.oferta.findMany({
-      where: {
-        regiao: regiao as Regiao,
-        expiresAt: { gte: agora },
-      },
-    });
+  const executarComparacao = async () => {
+    if (!listaSelecionada) return alert('Selecione uma lista primeiro!');
+    setLoading(true);
 
-    // 3. Define os 3 mercados para comparação
-    const mercadosEscaneados = Array.from(new Set(ofertasRecentes.map((o) => o.mercado)));
-    const fallbacks = MERCADOS_FALLBACK_POR_REGIAO[regiao] || ['Mercado A', 'Mercado B', 'Mercado C'];
-
-    // Garante exatamente 3 mercados
-    const mercadosParaComparar = Array.from(new Set([...mercadosEscaneados, ...fallbacks])).slice(0, 3);
-
-    // 4. Monta a matriz de comparação para cada produto da lista
-    const itensComparados = lista.itens.map((item) => {
-      const nomeProduto = item.nome;
-
-      const precosPorMercado = mercadosParaComparar.map((mercado) => {
-        // Tenta encontrar uma oferta no scanner
-        const ofertaScanner = ofertasRecentes.find(
-          (o) =>
-            o.mercado === mercado &&
-            o.produto.toLowerCase().includes(nomeProduto.toLowerCase())
-        );
-
-        if (ofertaScanner) {
-          return {
-            mercado,
-            preco: ofertaScanner.preco,
-            origem: 'SCANNER',
-            mensagem: 'Oferta do Folheto/Gôndola (Últimas 72h)',
-          };
-        }
-
-        // Simulação de Fallback via SEFAZ/Média Estadual caso não haja scan recente
-        // (Aqui você pode integrar a API SEFAZ do seu estado ou usar a média calculada)
-        const precoMedioSefaz = (item.precoEstimado || 12.50);
-
-        return {
-          mercado,
-          preco: precoMedioSefaz,
-          origem: 'SEFAZ',
-          mensagem: 'Preço médio oficial SEFAZ (Sem scanner recente)',
-        };
+    try {
+      const res = await fetch('/api/comparar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listaId: listaSelecionada, regiao }),
       });
 
-      return {
-        produto: nomeProduto,
-        quantidade: item.quantidade,
-        ofertas: precosPorMercado,
-      };
-    });
+      const data = await res.json();
+      setComparacao(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // 5. Calcula o valor total do carrinho em cada um dos 3 mercados
-    const totaisPorMercado = mercadosParaComparar.map((mercado) => {
-      const total = itensComparados.reduce((acc, item) => {
-        const oferta = item.ofertas.find((o) => o.mercado === mercado);
-        return acc + (oferta ? oferta.preco * item.quantidade : 0);
-      }, 0);
+  return (
+    <div className="p-4 max-w-5xl mx-auto space-y-8">
+      {/* SEÇÃO 1: COMPARADOR DE MERCADOS */}
+      <section className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        <h2 className="text-xl font-bold mb-4 text-gray-800">Cotação & Comparação entre Mercados</h2>
 
-      return { mercado, total };
-    });
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">Selecione a Lista</label>
+            <select
+              value={listaSelecionada}
+              onChange={(e) => setListaSelecionada(e.target.value)}
+              className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+            >
+              <option value="">-- Escolha uma lista --</option>
+              {listas.map((l) => (
+                <option key={l.id} value={l.id}>{l.nome}</option>
+              ))}
+            </select>
+          </div>
 
-    return NextResponse.json({
-      regiao,
-      mercados: mercadosParaComparar,
-      itens: itensComparados,
-      totais: totaisPorMercado,
-    });
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro ao processar comparação' }, { status: 500 });
-  }
+          <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">Sua Região</label>
+            <select
+              value={regiao}
+              onChange={(e) => setRegiao(e.target.value)}
+              className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+            >
+              <option value="SUDESTE">Sudeste</option>
+              <option value="SUL">Sul</option>
+              <option value="NORDESTE">Nordeste</option>
+              <option value="NORTE">Norte</option>
+              <option value="CENTRO_OESTE">Centro-Oeste</option>
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={executarComparacao}
+              disabled={loading}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-2.5 rounded-lg transition"
+            >
+              {loading ? 'Comparando...' : 'Comparar 3 Mercados'}
+            </button>
+          </div>
+        </div>
+
+        {comparacao && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {comparacao.totais.map((t, idx) => (
+                <div key={idx} className="p-4 rounded-xl border bg-slate-50 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs text-gray-500 uppercase font-bold">Mercado {idx + 1}</span>
+                    <p className="font-semibold text-lg text-gray-800">{t.mercado}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-gray-500">Total Est.</span>
+                    <p className="text-xl font-extrabold text-emerald-600">
+                      R$ {t.total.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="divide-y rounded-lg border overflow-hidden">
+              {comparacao.itens.map((item, i) => (
+                <div key={i} className="p-4 bg-white flex flex-col md:flex-row justify-between gap-4">
+                  <div className="font-medium text-gray-800 md:w-1/4">
+                    {item.produto} <span className="text-sm text-gray-500">({item.quantidade}x)</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 flex-1">
+                    {item.ofertas.map((of, j) => (
+                      <div
+                        key={j}
+                        className={`p-2.5 rounded-lg border text-sm flex flex-col justify-between ${
+                          of.origem === 'SCANNER'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                            : 'bg-amber-50 border-amber-200 text-amber-900'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold">
+                          <span>{of.mercado}</span>
+                          <span>R$ {of.preco.toFixed(2)}</span>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-1.5 text-xs">
+                          {of.origem === 'SCANNER' ? (
+                            <>
+                              <ScanCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="font-semibold text-emerald-700">Folheto / Scan</span>
+                            </>
+                          ) : (
+                            <>
+                              <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                              <span className="font-semibold text-amber-700">Média SEFAZ</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* SEÇÃO 2: HISTÓRICO DE SCANS */}
+      <section className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-800">Histórico de Escaneamentos</h2>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium">
+            Expira em até 72h
+          </span>
+        </div>
+
+        {historico.length === 0 ? (
+          <p className="text-gray-500 text-sm py-4">Nenhum scan ativo nas últimas 72 horas.</p>
+        ) : (
+          <div className="divide-y">
+            {historico.map((h) => (
+              <div key={h.id} className="py-3 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-800">{h.produto}</p>
+                  <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
+                    <span>{h.mercado}</span>
+                    <span>•</span>
+                    <span>R$ {Number(h.preco).toFixed(2)}</span>
+                    <span>•</span>
+                    <span>{new Date(h.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => excluirItemHistorico(h.id)}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                  title="Excluir item do histórico"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }

@@ -25,6 +25,7 @@ export default function HistoricoPage() {
   const [comparacao, setComparacao] = useState<ComparacaoData | null>(null);
   const [historico, setHistorico] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
 
   useEffect(() => {
     carregarListas();
@@ -33,9 +34,15 @@ export default function HistoricoPage() {
 
   const carregarListas = async () => {
     try {
-      const res = await fetch('/api/listas');
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/listas', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
-      if (Array.isArray(data)) setListas(data);
+      if (Array.isArray(data)) {
+        setListas(data);
+        if (data.length > 0) setListaSelecionada(data[0].id); // Seleciona a primeira lista por padrão
+      }
     } catch (e) {
       console.error(e);
     }
@@ -43,7 +50,10 @@ export default function HistoricoPage() {
 
   const carregarHistorico = async () => {
     try {
-      const res = await fetch('/api/historico');
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/historico', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (Array.isArray(data)) setHistorico(data);
     } catch (e) {
@@ -52,25 +62,52 @@ export default function HistoricoPage() {
   };
 
   const excluirItemHistorico = async (id: string) => {
-    await fetch(`/api/historico?id=${id}`, { method: 'DELETE' });
+    const token = localStorage.getItem('token');
+    await fetch(`/api/historico?id=${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     carregarHistorico();
   };
 
   const executarComparacao = async () => {
-    if (!listaSelecionada) return alert('Selecione uma lista primeiro!');
+    setErro('');
+
+    if (!listaSelecionada) {
+      setErro('Por favor, selecione uma lista no menu cascata.');
+      return;
+    }
+
+    if (!regiao) {
+      setErro('Por favor, selecione a sua região.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch('/api/comparar', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listaId: listaSelecionada, regiao }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          listaId: listaSelecionada,
+          regiao: regiao,
+        }),
       });
 
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao realizar comparação.');
+      }
+
       setComparacao(data);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setErro(e.message || 'Erro na requisição');
     } finally {
       setLoading(false);
     }
@@ -82,6 +119,12 @@ export default function HistoricoPage() {
       <section className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
         <h2 className="text-xl font-bold mb-4 text-gray-800">Cotação & Comparação entre Mercados</h2>
 
+        {erro && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+            {erro}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-700">Selecione a Lista</label>
@@ -92,7 +135,9 @@ export default function HistoricoPage() {
             >
               <option value="">-- Escolha uma lista --</option>
               {listas.map((l) => (
-                <option key={l.id} value={l.id}>{l.nome}</option>
+                <option key={l.id} value={l.id}>
+                  {l.nome}
+                </option>
               ))}
             </select>
           </div>
@@ -116,7 +161,7 @@ export default function HistoricoPage() {
             <button
               onClick={executarComparacao}
               disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-2.5 rounded-lg transition"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-2.5 rounded-lg transition disabled:opacity-50"
             >
               {loading ? 'Comparando...' : 'Comparar 3 Mercados'}
             </button>
@@ -135,7 +180,7 @@ export default function HistoricoPage() {
                   <div className="text-right">
                     <span className="text-xs text-gray-500">Total Est.</span>
                     <p className="text-xl font-extrabold text-emerald-600">
-                      R$ {t.total.toFixed(2)}
+                      R$ {Number(t.total).toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -161,7 +206,7 @@ export default function HistoricoPage() {
                       >
                         <div className="flex items-center justify-between font-bold">
                           <span>{of.mercado}</span>
-                          <span>R$ {of.preco.toFixed(2)}</span>
+                          <span>R$ {Number(of.preco).toFixed(2)}</span>
                         </div>
 
                         <div className="mt-2 flex items-center gap-1.5 text-xs">

@@ -1,105 +1,204 @@
-import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
-import { prisma } from '@/lib/prisma';
-import { Regiao } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+'use client';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import React, { useRef, useState, useEffect } from 'react';
+import { Camera, RefreshCw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const responseSchema: ResponseSchema = {
-  type: SchemaType.ARRAY,
-  description: 'Lista de produtos e preços em destaque',
-  items: {
-    type: SchemaType.OBJECT,
-    properties: {
-      produto: { type: SchemaType.STRING, description: 'Nome do produto' },
-      preco: { type: SchemaType.NUMBER, description: 'Preço numérico' },
-    },
-    required: ['produto', 'preco'],
-  },
-};
+export default function ScannerComponent() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-export async function POST(req: Request) {
-  try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
+  const [mercado, setMercado] = useState('Carrefour');
+  const [regiao, setRegiao] = useState('SUDESTE');
+  const [loading, setLoading] = useState(false);
+  const [cameraAtiva, setCameraAtiva] = useState(false);
+  const [mensagem, setMensagem] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
 
-    if (!token) {
-      return NextResponse.json({ error: 'Você precisa estar logado.' }, { status: 401 });
+  useEffect(() => {
+    iniciarCamera();
+    return () => pararCamera();
+  }, []);
+
+  const iniciarCamera = async () => {
+    setMensagem(null);
+
+    // Validação de ambiente seguro (necessário para câmeras no desktop)
+    if (typeof window !== 'undefined' && !window.isSecureContext && location.hostname !== 'localhost') {
+      setMensagem({
+        tipo: 'erro',
+        texto: 'A câmera requer conexão HTTPS. No desktop, acesse via localhost ou habilite HTTPS.',
+      });
+      return;
     }
 
-    let usuarioId = '';
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
-      usuarioId = decoded.id;
-    } catch {
-      return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
 
-    const formData = await req.formData();
-    const file = formData.get('file') as Blob | null;
-    const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
-    const regiaoInput = (formData.get('regiao') as string) || 'SUDESTE';
-
-    if (!file) {
-      return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.0,
-        maxOutputTokens: 1000,
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema,
-      },
-    });
-
-    const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
-
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: buffer.toString('base64'),
-          mimeType: 'image/jpeg',
-        },
-      },
-    ]);
-
-    const responseText = result.response.text();
-    const ofertasExtraidas = JSON.parse(responseText);
-
-    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
-
-    // Salva no banco de dados com a sintaxe corrigida
-    if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
-      await prisma.oferta.createMany({
-        data: ofertasExtraidas.map((item: any) => ({
-          produto: item.produto,
-          preco: Number(item.preco),
-          mercado: mercado,
-          regiao: regiaoInput as Regiao,
-          origem: 'SCANNER',
-          usuarioId: usuarioId,
-          expiresAt: expiresAt,
-        })),
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        setCameraAtiva(true);
+      }
+    } catch (err: any) {
+      console.error('Erro ao acessar a câmera:', err);
+      setCameraAtiva(false);
+      setMensagem({
+        tipo: 'erro',
+        texto: 'Câmera não encontrada ou acesso negado pelo navegador.',
       });
     }
+  };
 
-    return NextResponse.json({
-      success: true,
-      totalProcessados: ofertasExtraidas.length,
-      itens: ofertasExtraidas,
-    });
-  } catch (error: any) {
-    console.error('Erro na extração:', error);
-    return NextResponse.json(
-      { error: error.message || 'Erro ao processar imagem.' },
-      { status: 500 }
-    );
-  }
+  const pararCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+    }
+  };
+
+  const capturarEAnalisar = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        enviarParaApi(blob);
+      }
+    }, 'image/jpeg', 0.85);
+  };
+
+  const enviarParaApi = async (imageBlob: Blob) => {
+    setLoading(true);
+    setMensagem(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+
+      const formData = new FormData();
+      formData.append('file', imageBlob, 'capture.jpg');
+      formData.append('mercado', mercado);
+      formData.append('regiao', regiao);
+
+      const res = await fetch('/api/scan-folheto', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Erro ao processar imagem.');
+
+      setMensagem({
+        tipo: 'sucesso',
+        texto: `Sucesso! ${data.totalProcessados} ofertas salvas com sucesso.`,
+      });
+    } catch (err: any) {
+      setMensagem({ tipo: 'erro', texto: err.message || 'Falha ao analisar a imagem.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-xl mx-auto p-6 bg-white rounded-xl shadow-md border border-gray-100 space-y-4">
+      <h2 className="text-xl font-bold text-gray-800">Scanner de Ofertas em Tempo Real</h2>
+
+      {mensagem && (
+        <div
+          className={`p-3 rounded-lg flex items-center gap-2 text-sm ${
+            mensagem.tipo === 'sucesso'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}
+        >
+          {mensagem.tipo === 'sucesso' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+          )}
+          <span>{mensagem.texto}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Mercado</label>
+          <input
+            type="text"
+            value={mercado}
+            onChange={(e) => setMercado(e.target.value)}
+            className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Região</label>
+          <select
+            value={regiao}
+            onChange={(e) => setRegiao(e.target.value)}
+            className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+          >
+            <option value="SUDESTE">Sudeste</option>
+            <option value="SUL">Sul</option>
+            <option value="NORDESTE">Nordeste</option>
+            <option value="NORTE">Norte</option>
+            <option value="CENTRO_OESTE">Centro-Oeste</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden flex items-center justify-center">
+        <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+
+        {!cameraAtiva && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 text-white p-4 text-center">
+            <Camera className="w-12 h-12 mb-2 text-gray-400" />
+            <p className="text-sm mb-3">Câmera indisponível ou permissão negada.</p>
+            <button
+              onClick={iniciarCamera}
+              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Tentar Novamente
+            </button>
+          </div>
+        )}
+      </div>
+
+      <canvas ref={canvasRef} className="hidden" />
+
+      <button
+        onClick={capturarEAnalisar}
+        disabled={loading || !cameraAtiva}
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-3.5 rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span>Analisando Ofertas...</span>
+          </>
+        ) : (
+          <>
+            <Camera className="w-5 h-5" />
+            <span>Escanear / Capturar Foto</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
 }

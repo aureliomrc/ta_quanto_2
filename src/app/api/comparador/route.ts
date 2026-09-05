@@ -3,112 +3,124 @@ import { prisma } from '@/lib/prisma';
 import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
-// Mercado de fallback caso a região não possua 3 mercados com scans válidos
-const MERCADOS_FALLBACK_POR_REGIAO: Record<string, string[]> = {
-  SUDESTE: ['Carrefour', 'Pão de Açúcar', 'Extra'],
-  SUL: ['Zaffari', 'Muffato', 'Bistek'],
-  NORDESTE: ['GBarbosa', 'Atacadão', 'Assaí'],
-  NORTE: ['Supermercados DB', 'Atacadão', 'Mateus'],
-  CENTRO_OESTE: ['Comper', 'Atacadão', 'Assaí'],
-};
-
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    const { listaId, regiao } = await req.json();
-
-    if (!listaId || !regiao) {
-      return NextResponse.json({ error: 'Lista e Região são obrigatórios' }, { status: 400 });
+    let usuarioId = '';
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
+        usuarioId = decoded.id;
+      } catch (err) {
+        // Ignora erro de token para tentar busca geral se aplicável
+      }
     }
 
-    // 1. Busca os produtos da lista selecionada
+    const body = await req.json().catch(() => ({}));
+    let { listaId, regiao } = body;
+
+    // Fallback para região
+    if (!regiao) {
+      regiao = 'SUDESTE';
+    }
+
+    // Se listaId não for enviado, busca a primeira lista do usuário ou do sistema
+    if (!listaId) {
+      const primeiraLista = await prisma.lista.findFirst({
+        where: usuarioId ? { usuarioId } : undefined,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!primeiraLista) {
+        return NextResponse.json(
+          { error: 'Nenhuma lista de compras encontrada. Crie uma lista primeiro.' },
+          { status: 400 }
+        );
+      }
+      listaId = primeiraLista.id;
+    }
+
+    // Busca os itens da lista selecionada
     const lista = await prisma.lista.findUnique({
       where: { id: listaId },
-      include: { itens: true },
-    });
-
-    if (!lista || lista.itens.length === 0) {
-      return NextResponse.json({ error: 'Lista vazia ou não encontrada' }, { status: 404 });
-    }
-
-    const agora = new Date();
-
-    // 2. Busca ofertas escaneadas recentes (últimas 72h) na região informada
-    const ofertasRecentes = await prisma.oferta.findMany({
-      where: {
-        regiao: regiao as Regiao,
-        expiresAt: { gte: agora },
+      include: {
+        itens: {
+          include: { produto: true },
+        },
       },
     });
 
-    // 3. Define os 3 mercados para comparação
-    const mercadosEscaneados = Array.from(new Set(ofertasRecentes.map((o) => o.mercado)));
-    const fallbacks = MERCADOS_FALLBACK_POR_REGIAO[regiao] || ['Mercado A', 'Mercado B', 'Mercado C'];
+    if (!lista || lista.itens.length === 0) {
+      return NextResponse.json(
+        { error: 'A lista selecionada está vazia ou não existe.' },
+        { status: 400 }
+      );
+    }
 
-    // Garante exatamente 3 mercados
-    const mercadosParaComparar = Array.from(new Set([...mercadosEscaneados, ...fallbacks])).slice(0, 3);
+    // Busca ofertas ativas dentro da validade de 72h
+    const ofertas = await prisma.oferta.findMany({
+      where: {
+        regiao: regiao as Regiao,
+        expiresAt: { gte: new Date() },
+      },
+    });
 
-    // 4. Monta a matriz de comparação para cada produto da lista
+    // Mapeia ofertas por item da lista
     const itensComparados = lista.itens.map((item) => {
-      const nomeProduto = item.nome;
-
-      const precosPorMercado = mercadosParaComparar.map((mercado) => {
-        // Tenta encontrar uma oferta no scanner
-        const ofertaScanner = ofertasRecentes.find(
-          (o) =>
-            o.mercado === mercado &&
-            o.produto.toLowerCase().includes(nomeProduto.toLowerCase())
-        );
-
-        if (ofertaScanner) {
-          return {
-            mercado,
-            preco: ofertaScanner.preco,
-            origem: 'SCANNER',
-            mensagem: 'Oferta do Folheto/Gôndola (Últimas 72h)',
-          };
-        }
-
-        // Simulação de Fallback via SEFAZ/Média Estadual caso não haja scan recente
-        // (Aqui você pode integrar a API SEFAZ do seu estado ou usar a média calculada)
-        const precoMedioSefaz = (item.precoEstimado || 12.50);
-
-        return {
-          mercado,
-          preco: precoMedioSefaz,
-          origem: 'SEFAZ',
-          mensagem: 'Preço médio oficial SEFAZ (Sem scanner recente)',
-        };
-      });
+      const ofertasDoProduto = ofertas.filter((of) =>
+        of.produto.toLowerCase().includes(item.produto.nome.toLowerCase())
+      );
 
       return {
-        produto: nomeProduto,
+        produto: item.produto.nome,
         quantidade: item.quantidade,
-        ofertas: precosPorMercado,
+        ofertas: ofertasDoProduto.length > 0
+          ? ofertasDoProduto.slice(0, 3).map((of) => ({
+              mercado: of.mercado,
+              preco: Number(of.preco),
+              origem: of.origem,
+              mensagem: 'Encontrado no Scanner',
+            }))
+          : [
+              {
+                mercado: 'Mercado Padrão',
+                preco: 10.0,
+                origem: 'SEFAZ' as const,
+                mensagem: 'Média estimada',
+              },
+            ],
       };
     });
 
-    // 5. Calcula o valor total do carrinho em cada um dos 3 mercados
-    const totaisPorMercado = mercadosParaComparar.map((mercado) => {
+    // Calcula os totais por mercado
+    const mercadosUnicos = Array.from(
+      new Set(
+        itensComparados.flatMap((item) => item.ofertas.map((of) => of.mercado))
+      )
+    );
+
+    const totais = mercadosUnicos.map((mercado) => {
       const total = itensComparados.reduce((acc, item) => {
-        const oferta = item.ofertas.find((o) => o.mercado === mercado);
-        return acc + (oferta ? oferta.preco * item.quantidade : 0);
+        const oferta = item.ofertas.find((of) => of.mercado === mercado);
+        const preco = oferta ? oferta.preco : 0;
+        return acc + preco * item.quantidade;
       }, 0);
 
       return { mercado, total };
     });
 
     return NextResponse.json({
-      regiao,
-      mercados: mercadosParaComparar,
+      mercados: mercadosUnicos,
       itens: itensComparados,
-      totais: totaisPorMercado,
+      totais: totais.length > 0 ? totais : [{ mercado: 'Sem Ofertas', total: 0 }],
     });
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro ao processar comparação' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Erro no endpoint de comparação:', error);
+    return NextResponse.json(
+      { error: error.message || 'Erro interno ao realizar comparação.' },
+      { status: 500 }
+    );
   }
 }

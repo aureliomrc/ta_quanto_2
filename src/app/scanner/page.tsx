@@ -48,7 +48,6 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Redimensiona e comprime qualquer imagem antes de definir no state
   const comprimirEGuardarImagem = (source: HTMLVideoElement | HTMLImageElement) => {
     const canvas = canvasRef.current || document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -63,7 +62,6 @@ export default function LeitorFolhetoPage() {
 
     if (ctx) {
       ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-      // Reduz drasticamente o tamanho do payload usando compressão JPEG 0.6
       const base64Comprimido = canvas.toDataURL('image/jpeg', 0.6);
       setImagemBase64(base64Comprimido);
     }
@@ -103,6 +101,7 @@ export default function LeitorFolhetoPage() {
     setMensagem('Analisando ofertas com a IA e salvando no banco Neon...');
 
     try {
+      // ✅ ROTA CORRIGIDA: Apontando explicitamente para /api/scan-folheto
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
         headers: {
@@ -114,11 +113,11 @@ export default function LeitorFolhetoPage() {
 
       const data = await res.json();
 
-      if (res.ok) {
+      if (res.ok && data.success) {
         setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
         setImagemBase64(null);
       } else {
-        setMensagem(`❌ ${data.error || 'Falha ao processar.'}`);
+        setMensagem(`❌ ${data.error || data.message || 'Falha ao processar imagem.'}`);
       }
     } catch (err: any) {
       setMensagem(`❌ Erro de conexão com o servidor: ${err.message || ''}`);

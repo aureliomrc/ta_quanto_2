@@ -48,11 +48,12 @@ export default function LeitorFolhetoPage() {
     }
   };
 
+  // Função essencial: Redimensiona e comprime a imagem para não estourar o limite do servidor
   const comprimirEGuardarImagem = (source: HTMLVideoElement | HTMLImageElement) => {
     const canvas = canvasRef.current || document.createElement('canvas');
     const ctx = canvas.getContext('2d');
 
-    const maxWidth = 1024;
+    const maxWidth = 1024; // Define uma largura máxima razoável
     const width = 'videoWidth' in source ? source.videoWidth : source.width;
     const height = 'videoHeight' in source ? source.videoHeight : source.height;
 
@@ -62,6 +63,7 @@ export default function LeitorFolhetoPage() {
 
     if (ctx) {
       ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      // Salva como JPEG com 60% de qualidade para reduzir drasticamente o tamanho (Base64 menor)
       const base64Comprimido = canvas.toDataURL('image/jpeg', 0.6);
       setImagemBase64(base64Comprimido);
     }
@@ -98,10 +100,10 @@ export default function LeitorFolhetoPage() {
     }
 
     setCarregando(true);
-    setMensagem('Analisando ofertas com a IA e salvando no banco Neon...');
+    setMensagem('Analisando ofertas com a IA e salvando no banco...');
 
     try {
-      // ✅ ROTA CORRIGIDA: Apontando explicitamente para /api/scan-folheto
+      // ✅ ROTA CORRIGIDA AQUI: Chamando a API de processamento do folheto
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
         headers: {
@@ -115,9 +117,11 @@ export default function LeitorFolhetoPage() {
 
       if (res.ok && data.success) {
         setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
+        // Limpa a imagem para o próximo scanner
         setImagemBase64(null);
       } else {
-        setMensagem(`❌ ${data.error || data.message || 'Falha ao processar imagem.'}`);
+        // Exibe a mensagem de erro específica retornada pela API
+        setMensagem(`❌ ${data.error || 'Falha ao processar imagem.'}`);
       }
     } catch (err: any) {
       setMensagem(`❌ Erro de conexão com o servidor: ${err.message || ''}`);
@@ -158,7 +162,7 @@ export default function LeitorFolhetoPage() {
               <option value="SUDESTE">SUDESTE</option>
               <option value="SUL">SUL</option>
               <option value="NORDESTE">NORDESTE</option>
-              <option value="CENTRO_OESTE">CENTRO_OESTE</option>
+              <option value="CENTRO_OESTE">CENTRO-OESTE</option>
               <option value="NORTE">NORTE</option>
             </select>
           </div>
@@ -172,6 +176,7 @@ export default function LeitorFolhetoPage() {
           className="hidden"
         />
 
+        {/* Canvas escondido para auxiliar na compressão de imagem */}
         <canvas ref={canvasRef} className="hidden" />
 
         <div className="bg-black rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800 relative overflow-hidden">
@@ -197,7 +202,8 @@ export default function LeitorFolhetoPage() {
                   type="button"
                   onClick={handleEnviar}
                   disabled={carregando}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
+                  // Força type="button" para evitar submit acidental de forms
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50 active:scale-95 transition-all"
                 >
                   {carregando ? 'Processando...' : 'Analisar & Salvar'}
                 </button>
@@ -222,7 +228,7 @@ export default function LeitorFolhetoPage() {
                 <button
                   type="button"
                   onClick={capturarFotoVideo}
-                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs"
+                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs active:scale-95 transition-all"
                 >
                   📸 Capturar Frame
                 </button>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
 import { prisma } from '@/lib/prisma';
+import { Regiao, OrigemOferta } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -89,9 +90,9 @@ export async function POST(req: Request) {
         produto: String(item.produto),
         preco: Number(item.preco),
         mercado: mercado,
-        regiao: regiaoInput as any,
-        origem: 'SCANNER',
-        usuarioId: usuarioId || null,
+        regiao: regiaoInput as Regiao,
+        origem: OrigemOferta.SCANNER,
+        usuarioId: usuarioId,
         expiresAt: expiresAt,
       }));
 

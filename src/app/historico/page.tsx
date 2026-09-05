@@ -39,16 +39,18 @@ export default function HistoricoPage() {
           const listaHistorico: ItemHistorico[] = Array.isArray(data) ? data : data.historico || [];
           setHistorico(listaHistorico);
 
-          // Agrupa e calcula totais por mercado para o painel de comparação superior
+          // Agrupa e calcula totais por mercado
           const agregados: { [key: string]: number } = {};
           listaHistorico.forEach((item) => {
             const m = item.mercado || 'Outros';
             agregados[m] = (agregados[m] || 0) + (item.total || 0);
           });
 
-          const listaComparacao = Object.keys(agregados).map((m) => ({
+          // Tipagem explícita adicionada aqui para evitar erro no TypeScript
+          const listaComparacao: ComparacaoMercado[] = Object.keys(agregados).map((m) => ({
             nome: m,
             total: agregados[m],
+            isMaisBarato: false,
           }));
 
           // Define o menor valor como destaque

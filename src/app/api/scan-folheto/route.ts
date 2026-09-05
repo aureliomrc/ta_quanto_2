@@ -4,7 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const apiKey = process.env.GEMINI_API_KEY || '';
+const genAI = new GoogleGenerativeAI(apiKey);
 
 const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
@@ -21,6 +22,13 @@ const responseSchema: ResponseSchema = {
 
 export async function POST(req: Request) {
   try {
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'Chave GEMINI_API_KEY não configurada no servidor.' },
+        { status: 500 }
+      );
+    }
+
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
@@ -33,11 +41,11 @@ export async function POST(req: Request) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
       usuarioId = decoded.id;
     } catch {
-      return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
+      return NextResponse.json({ error: 'Sessão expirada. Faça login novamente.' }, { status: 401 });
     }
 
     const formData = await req.formData();
-    const file = formData.get('file') as Blob | null;
+    const file = formData.get('file') as File | null;
     const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
     const regiaoInput = (formData.get('regiao') as string) || 'SUDESTE';
 
@@ -45,6 +53,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
+    const mimeType = file.type || 'image/jpeg';
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -58,14 +67,14 @@ export async function POST(req: Request) {
       },
     });
 
-    const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
+    const prompt = `Extraia a lista de produtos e preços da foto do encarte do mercado "${mercado}".`;
 
     const result = await model.generateContent([
       prompt,
       {
         inlineData: {
           data: buffer.toString('base64'),
-          mimeType: 'image/jpeg',
+          mimeType: mimeType,
         },
       },
     ]);
@@ -97,9 +106,9 @@ export async function POST(req: Request) {
       itens: ofertasExtraidas,
     });
   } catch (error: any) {
-    console.error('Erro na extração:', error);
+    console.error('Erro detalhado no Scanner:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro ao processar imagem.' },
+      { error: error.message || 'Erro interno ao analisar imagem.' },
       { status: 500 }
     );
   }

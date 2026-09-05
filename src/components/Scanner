@@ -21,10 +21,11 @@ export default function ScannerComponent() {
   const iniciarCamera = async () => {
     setMensagem(null);
 
+    // Validação de contexto seguro (HTTPS ou localhost)
     if (typeof window !== 'undefined' && !window.isSecureContext && location.hostname !== 'localhost') {
       setMensagem({
         tipo: 'erro',
-        texto: 'A câmera requer conexão HTTPS. No desktop, acesse via localhost ou habilite HTTPS.',
+        texto: 'A câmera requer conexão HTTPS. No desktop ou IP local, habilite HTTPS no servidor.',
       });
       return;
     }
@@ -45,7 +46,7 @@ export default function ScannerComponent() {
       setCameraAtiva(false);
       setMensagem({
         tipo: 'erro',
-        texto: 'Câmera não encontrada ou acesso negado pelo navegador.',
+        texto: 'Câmera não encontrada ou acesso bloqueado pelo navegador.',
       });
     }
   };
@@ -71,11 +72,17 @@ export default function ScannerComponent() {
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob((blob) => {
-      if (blob) {
-        enviarParaApi(blob);
-      }
-    }, 'image/jpeg', 0.85);
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          enviarParaApi(blob);
+        } else {
+          setMensagem({ tipo: 'erro', texto: 'Falha ao gerar a imagem capturada.' });
+        }
+      },
+      'image/jpeg',
+      0.85
+    );
   };
 
   const enviarParaApi = async (imageBlob: Blob) => {
@@ -84,7 +91,9 @@ export default function ScannerComponent() {
 
     try {
       const token = localStorage.getItem('token');
-      if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+      if (!token) {
+        throw new Error('Sessão não encontrada. Faça login novamente.');
+      }
 
       const formData = new FormData();
       formData.append('file', imageBlob, 'capture.jpg');
@@ -101,14 +110,19 @@ export default function ScannerComponent() {
 
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || 'Erro ao processar imagem.');
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro no servidor durante o processamento.');
+      }
 
       setMensagem({
         tipo: 'sucesso',
-        texto: `Sucesso! ${data.totalProcessados} ofertas salvas com sucesso.`,
+        texto: `Sucesso! ${data.totalProcessados} ofertas extraídas e salvas.`,
       });
     } catch (err: any) {
-      setMensagem({ tipo: 'erro', texto: err.message || 'Falha ao analisar a imagem.' });
+      setMensagem({
+        tipo: 'erro',
+        texto: err.message || 'Erro ao comunicar com o servidor.',
+      });
     } finally {
       setLoading(false);
     }
@@ -120,7 +134,7 @@ export default function ScannerComponent() {
 
       {mensagem && (
         <div
-          className={`p-3 rounded-lg flex items-center gap-2 text-sm ${
+          className={`p-3.5 rounded-lg flex items-center gap-2.5 text-sm ${
             mensagem.tipo === 'sucesso'
               ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
               : 'bg-red-50 text-red-800 border border-red-200'
@@ -131,7 +145,7 @@ export default function ScannerComponent() {
           ) : (
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           )}
-          <span>{mensagem.texto}</span>
+          <span className="font-medium">{mensagem.texto}</span>
         </div>
       )}
 
@@ -142,7 +156,7 @@ export default function ScannerComponent() {
             type="text"
             value={mercado}
             onChange={(e) => setMercado(e.target.value)}
-            className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+            className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
           />
         </div>
 
@@ -151,7 +165,7 @@ export default function ScannerComponent() {
           <select
             value={regiao}
             onChange={(e) => setRegiao(e.target.value)}
-            className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-800"
+            className="w-full p-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
           >
             <option value="SUDESTE">Sudeste</option>
             <option value="SUL">Sul</option>
@@ -168,10 +182,10 @@ export default function ScannerComponent() {
         {!cameraAtiva && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 text-white p-4 text-center">
             <Camera className="w-12 h-12 mb-2 text-gray-400" />
-            <p className="text-sm mb-3">Câmera indisponível ou permissão negada.</p>
+            <p className="text-sm mb-3">Câmera indisponível ou permissão pendente.</p>
             <button
               onClick={iniciarCamera}
-              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-1.5"
+              className="bg-white/20 hover:bg-white/30 text-white text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Tentar Novamente
             </button>
@@ -184,17 +198,17 @@ export default function ScannerComponent() {
       <button
         onClick={capturarEAnalisar}
         disabled={loading || !cameraAtiva}
-        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-3.5 rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium p-3.5 rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
       >
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Analisando Ofertas...</span>
+            <span>Analisando Ofertas com IA...</span>
           </>
         ) : (
           <>
             <Camera className="w-5 h-5" />
-            <span>Escanear / Capturar Foto</span>
+            <span>Capturar e Processar</span>
           </>
         )}
       </button>

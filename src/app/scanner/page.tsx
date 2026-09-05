@@ -48,19 +48,31 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  const capturarFotoVideo = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+  // Redimensiona e comprime qualquer imagem antes de definir no state
+  const comprimirEGuardarImagem = (source: HTMLVideoElement | HTMLImageElement) => {
+    const canvas = canvasRef.current || document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
 
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        setImagemBase64(canvas.toDataURL('image/jpeg'));
-        desligarCamera();
-      }
+    const maxWidth = 1024;
+    const width = 'videoWidth' in source ? source.videoWidth : source.width;
+    const height = 'videoHeight' in source ? source.videoHeight : source.height;
+
+    const scale = maxWidth / (width || 640);
+    canvas.width = maxWidth;
+    canvas.height = (height || 480) * scale;
+
+    if (ctx) {
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      // Reduz drasticamente o tamanho do payload usando compressão JPEG 0.6
+      const base64Comprimido = canvas.toDataURL('image/jpeg', 0.6);
+      setImagemBase64(base64Comprimido);
+    }
+  };
+
+  const capturarFotoVideo = () => {
+    if (videoRef.current) {
+      comprimirEGuardarImagem(videoRef.current);
+      desligarCamera();
     }
   };
 
@@ -69,7 +81,9 @@ export default function LeitorFolhetoPage() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagemBase64(reader.result as string);
+        const img = new Image();
+        img.onload = () => comprimirEGuardarImagem(img);
+        img.src = reader.result as string;
         setMensagem('');
       };
       reader.readAsDataURL(file);
@@ -104,7 +118,7 @@ export default function LeitorFolhetoPage() {
         setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
         setImagemBase64(null);
       } else {
-        setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
+        setMensagem(`❌ ${data.error || 'Falha ao processar.'}`);
       }
     } catch (err: any) {
       setMensagem(`❌ Erro de conexão com o servidor: ${err.message || ''}`);

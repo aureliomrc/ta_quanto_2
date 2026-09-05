@@ -4,6 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { Regiao, OrigemOferta } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 const apiKey = process.env.GEMINI_API_KEY || '';
 const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -22,12 +25,12 @@ const responseSchema: ResponseSchema = {
 
 export async function POST(req: Request) {
   try {
-    // 1. Validação do Token JWT
+    // 1. Validação de Autenticação JWT
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
     if (!token) {
-      return NextResponse.json({ error: 'Você precisa estar logado.' }, { status: 401 });
+      return NextResponse.json({ error: 'Você precisa estar logado para realizar esta operação.' }, { status: 401 });
     }
 
     let usuarioId = '';
@@ -35,22 +38,23 @@ export async function POST(req: Request) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
       usuarioId = decoded.id;
     } catch (err: any) {
-      return NextResponse.json({ error: `Sessão expirada ou inválida: ${err.message}` }, { status: 401 });
+      return NextResponse.json({ error: `Sessão expirada ou token inválido: ${err.message}` }, { status: 401 });
     }
 
-    // 2. Leitura do Body
+    // 2. Validação da Chave da API Gemini
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Chave GEMINI_API_KEY não configurada no .env do servidor.' }, { status: 500 });
+    }
+
+    // 3. Leitura dos Dados Recebidos no Body
     const body = await req.json();
     const { imagemBase64, mercado = 'Mercado', regiao = 'SUDESTE' } = body;
 
     if (!imagemBase64) {
-      return NextResponse.json({ error: 'Nenhuma imagem foi enviada.' }, { status: 400 });
+      return NextResponse.json({ error: 'Nenhuma imagem foi recebida pelo servidor.' }, { status: 400 });
     }
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Chave GEMINI_API_KEY não configurada no servidor.' }, { status: 500 });
-    }
-
-    // 3. Limpeza do Base64 e detecção do MIME Type
+    // 4. Limpeza da String Base64 e MIME Type
     let cleanBase64 = imagemBase64;
     let mimeType = 'image/jpeg';
 
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 4. Chamada à API do Gemini
+    // 5. Chamada para a API Gemini (gemini-2.0-flash)
     let ofertasExtraidas: any[] = [];
     try {
       const model = genAI.getGenerativeModel({
@@ -73,7 +77,7 @@ export async function POST(req: Request) {
         },
       });
 
-      const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
+      const prompt = `Liste até 15 produtos e preços visíveis na foto do folheto do mercado "${mercado}".`;
 
       const result = await model.generateContent([
         prompt,
@@ -90,16 +94,15 @@ export async function POST(req: Request) {
     } catch (geminiErr: any) {
       console.error('Erro Gemini:', geminiErr);
       return NextResponse.json(
-        { error: `Erro na IA Gemini: ${geminiErr.message || 'Falha ao processar imagem.'}` },
+        { error: `Erro na análise do Gemini: ${geminiErr.message || 'Falha ao processar imagem.'}` },
         { status: 500 }
       );
     }
 
-    // 5. Mapeamento e Inserção no Banco
+    // 6. Salvando no Banco de Dados via Prisma
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
-      // Normalização da Região para evitar erro de enum (ex: CENTRO-OESTE -> CENTRO_OESTE)
-      const regiaoFormatada = regiao.replace('-', '_').toUpperCase();
-
+      // Formata a região para garantir padrão Enum do Prisma (ex: CENTRO-OESTE -> CENTRO_OESTE)
+      const regiaoFormatada = regiao.replace(/-/g, '_').toUpperCase();
       const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
       const ofertasParaInserir = ofertasExtraidas.map((item: any) => ({
@@ -119,7 +122,7 @@ export async function POST(req: Request) {
       } catch (prismaErr: any) {
         console.error('Erro Prisma:', prismaErr);
         return NextResponse.json(
-          { error: `Erro ao salvar no banco: ${prismaErr.message}` },
+          { error: `Erro ao salvar registros no banco: ${prismaErr.message}` },
           { status: 500 }
         );
       }
@@ -131,9 +134,9 @@ export async function POST(req: Request) {
       itens: ofertasExtraidas,
     });
   } catch (error: any) {
-    console.error('Erro Não Tratado na Rota:', error);
+    console.error('Erro Geral na Rota:', error);
     return NextResponse.json(
-      { error: `Falha interna: ${error.message || 'Erro desconhecido'}` },
+      { error: `Falha interna no servidor: ${error.message || 'Erro desconhecido'}` },
       { status: 500 }
     );
   }

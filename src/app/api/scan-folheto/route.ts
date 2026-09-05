@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType, ResponseSchema } from '@google/generative-ai';
 import { prisma } from '@/lib/prisma';
-import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -20,7 +19,6 @@ const responseSchema: ResponseSchema = {
 };
 
 export async function POST(req: Request) {
-  // Inicia a contagem total
   console.time('⏱️ Tempo TOTAL da requisição');
 
   try {
@@ -41,7 +39,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
     }
 
-    // 1. Medir o tempo para receber a imagem do cliente
     console.time('📸 1. Receber e converter imagem');
     const formData = await req.formData();
     const file = formData.get('file') as Blob | null;
@@ -57,7 +54,6 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(arrayBuffer);
     console.timeEnd('📸 1. Receber e converter imagem');
 
-    // Configuração do Gemini
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
       generationConfig: {
@@ -70,7 +66,6 @@ export async function POST(req: Request) {
 
     const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
 
-    // 2. Medir o tempo de resposta da API do Gemini
     console.time('🤖 2. Processamento IA (Gemini API)');
     const result = await model.generateContent([
       prompt,
@@ -86,7 +81,6 @@ export async function POST(req: Request) {
     const responseText = result.response.text();
     const ofertasExtraidas = JSON.parse(responseText);
 
-    // 3. Salvar no Banco de Dados (Prisma)
     console.time('💾 3. Salvando ofertas no banco');
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
@@ -95,9 +89,9 @@ export async function POST(req: Request) {
         produto: String(item.produto),
         preco: Number(item.preco),
         mercado: mercado,
-        regiao: regiaoInput as Regiao,
-        origem: 'SCANNER' as const,
-        usuarioId: usuarioId,
+        regiao: regiaoInput as any,
+        origem: 'SCANNER',
+        usuarioId: usuarioId || null,
         expiresAt: expiresAt,
       }));
 
@@ -116,9 +110,9 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.timeEnd('⏱️ Tempo TOTAL da requisição');
-    console.error('Erro na extração:', error);
+    console.error('Erro detalhado no processamento:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro ao processar imagem.' },
+      { error: error.message || 'Falha ao processar.' },
       { status: 500 }
     );
   }

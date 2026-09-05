@@ -68,40 +68,59 @@ export async function POST(req: Request) {
     const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
 
     console.time('🤖 2. Processamento IA (Gemini API)');
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: buffer.toString('base64'),
-          mimeType: 'image/jpeg',
+    let ofertasExtraidas: any[] = [];
+    try {
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: buffer.toString('base64'),
+            mimeType: 'image/jpeg',
+          },
         },
-      },
-    ]);
+      ]);
+      const responseText = result.response.text();
+      ofertasExtraidas = JSON.parse(responseText);
+    } catch (geminiError: any) {
+      console.error('Erro na chamada do Gemini:', geminiError);
+      console.timeEnd('🤖 2. Processamento IA (Gemini API)');
+      console.timeEnd('⏱️ Tempo TOTAL da requisição');
+      return NextResponse.json(
+        { error: `Erro na IA: ${geminiError.message || 'Falha ao analisar a imagem pelo Gemini.'}` },
+        { status: 500 }
+      );
+    }
     console.timeEnd('🤖 2. Processamento IA (Gemini API)');
-
-    const responseText = result.response.text();
-    const ofertasExtraidas = JSON.parse(responseText);
 
     console.time('💾 3. Salvando ofertas no banco');
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
-      const ofertasParaInserir = ofertasExtraidas.map((item: any) => ({
-        produto: String(item.produto),
-        preco: Number(item.preco),
-        mercado: mercado,
-        regiao: regiaoInput as Regiao,
-        origem: OrigemOferta.SCANNER,
-        usuarioId: usuarioId,
-        expiresAt: expiresAt,
-      }));
+      try {
+        const ofertasParaInserir = ofertasExtraidas.map((item: any) => ({
+          produto: String(item.produto),
+          preco: Number(item.preco),
+          mercado: mercado,
+          regiao: regiaoInput as Regiao,
+          origem: OrigemOferta.SCANNER,
+          usuarioId: usuarioId,
+          expiresAt: expiresAt,
+        }));
 
-      await prisma.oferta.createMany({
-        data: ofertasParaInserir,
-      });
+        await prisma.oferta.createMany({
+          data: ofertasParaInserir,
+        });
+      } catch (prismaError: any) {
+        console.error('Erro ao salvar no Prisma:', prismaError);
+        console.timeEnd('💾 3. Salvando ofertas no banco');
+        console.timeEnd('⏱️ Tempo TOTAL da requisição');
+        return NextResponse.json(
+          { error: `Erro ao salvar ofertas no banco: ${prismaError.message}` },
+          { status: 500 }
+        );
+      }
     }
     console.timeEnd('💾 3. Salvando ofertas no banco');
-
     console.timeEnd('⏱️ Tempo TOTAL da requisição');
 
     return NextResponse.json({
@@ -111,9 +130,9 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.timeEnd('⏱️ Tempo TOTAL da requisição');
-    console.error('Erro detalhado no processamento:', error);
+    console.error('Erro geral na rota:', error);
     return NextResponse.json(
-      { error: error.message || 'Falha ao processar.' },
+      { error: error.message || 'Falha geral no processamento.' },
       { status: 500 }
     );
   }

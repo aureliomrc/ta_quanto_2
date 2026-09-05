@@ -16,8 +16,8 @@ export default function CompararPage() {
   const [resultado, setResultado] = useState<any>(null);
   const [erro, setErro] = useState('');
 
-  // Estado para controlar qual card de mercado está expandido
-  const [mercadoExpandido, setMercadoExpandido] = useState<string | null>(null);
+  // Guarda qual mercado está com a lista aberta no momento
+  const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
 
   useEffect(() => {
     const buscarListas = async () => {
@@ -45,7 +45,7 @@ export default function CompararPage() {
   const handleComparar = async () => {
     setCarregando(true);
     setErro('');
-    setMercadoExpandido(null);
+    setMercadoAberto(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -69,12 +69,8 @@ export default function CompararPage() {
     }
   };
 
-  const toggleMercado = (nomeMercado: string) => {
-    if (mercadoExpandido === nomeMercado) {
-      setMercadoExpandido(null);
-    } else {
-      setMercadoExpandido(nomeMercado);
-    }
+  const alternarVisualizacao = (nomeMercado: string) => {
+    setMercadoAberto(mercadoAberto === nomeMercado ? null : nomeMercado);
   };
 
   return (
@@ -139,21 +135,21 @@ export default function CompararPage() {
           </div>
         )}
 
-        {/* Cards dos Mercados com Lista Interna Incorporada */}
+        {/* CARDS DOS MERCADOS COM LISTA EMBUTIDA */}
         {resultado && (
           <div className="space-y-3 pt-2">
             <h2 className="text-xs font-black text-slate-500 uppercase">Ranking dos Mercados</h2>
 
             <div className="space-y-3">
               {resultado.totais?.slice(0, 3).map((t: any, idx: number) => {
-                const isExpanded = mercadoExpandido === t.mercado;
+                const estaAberto = mercadoAberto === t.mercado;
 
                 return (
                   <div
                     key={idx}
-                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all"
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm"
                   >
-                    {/* Cabeçalho do Card */}
+                    {/* Topo do Card com Nome e Total */}
                     <div className="p-4 flex justify-between items-center bg-white">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
@@ -168,37 +164,36 @@ export default function CompararPage() {
                       </div>
                     </div>
 
-                    {/* Botão de Expansão/Visualização */}
+                    {/* Botão de Expandir / Ocultar */}
                     <button
                       type="button"
-                      onClick={() => toggleMercado(t.mercado)}
-                      className="w-full py-2 px-4 bg-slate-50 border-t border-slate-100 text-slate-600 font-bold text-[11px] flex justify-between items-center hover:bg-slate-100 transition-colors"
+                      onClick={() => alternarVisualizacao(t.mercado)}
+                      className="w-full py-2 px-4 bg-slate-50 border-t border-slate-100 text-slate-600 font-bold text-xs flex justify-between items-center hover:bg-slate-100 transition-colors"
                     >
-                      <span>{isExpanded ? 'Ocultar Produtos' : 'Ver Produtos'}</span>
-                      <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-                        ▼
-                      </span>
+                      <span>{estaAberto ? 'Ocultar Lista de Produtos' : 'Ver Lista de Produtos'}</span>
+                      <span>{estaAberto ? '▲' : '▼'}</span>
                     </button>
 
-                    {/* Lista Interna do Mercado */}
-                    {isExpanded && (
-                      <div className="p-3 bg-slate-50/50 border-t border-slate-100 space-y-2">
+                    {/* Lista Interna dos Produtos do Mercado */}
+                    {estaAberto && (
+                      <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-2">
                         {resultado.itens?.map((item: any, itemIdx: number) => {
-                          const ofertaDoMercado = item.ofertas.find(
-                            (of: any) => of.mercado === t.mercado
-                          ) || item.ofertas[idx] || item.ofertas[0];
+                          const ofertaDoMercado =
+                            item.ofertas.find((of: any) => of.mercado === t.mercado) ||
+                            item.ofertas[idx] ||
+                            item.ofertas[0];
 
                           return (
                             <div
                               key={itemIdx}
-                              className="bg-white p-2.5 rounded-xl border border-slate-100 flex justify-between items-center text-xs shadow-2xs"
+                              className="bg-white p-2.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs"
                             >
                               <div>
                                 <p className="font-bold text-slate-800">
                                   {item.produto}{' '}
                                   <span className="text-slate-400 font-normal">(x{item.quantidade})</span>
                                 </p>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">
                                   {ofertaDoMercado?.mensagem || 'Média SEFAZ'}
                                 </span>
                               </div>

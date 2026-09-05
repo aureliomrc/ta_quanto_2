@@ -106,8 +106,8 @@ export default function LeitorFolhetoPage() {
       } else {
         setMensagem(`❌ Erro: ${data.error || 'Falha ao processar.'}`);
       }
-    } catch {
-      setMensagem('❌ Erro de conexão com o servidor.');
+    } catch (err: any) {
+      setMensagem(`❌ Erro de conexão com o servidor: ${err.message || ''}`);
     } finally {
       setCarregando(false);
     }
@@ -145,7 +145,7 @@ export default function LeitorFolhetoPage() {
               <option value="SUDESTE">SUDESTE</option>
               <option value="SUL">SUL</option>
               <option value="NORDESTE">NORDESTE</option>
-              <option value="CENTRO-OESTE">CENTRO-OESTE</option>
+              <option value="CENTRO_OESTE">CENTRO_OESTE</option>
               <option value="NORTE">NORTE</option>
             </select>
           </div>
@@ -186,7 +186,7 @@ export default function LeitorFolhetoPage() {
                   disabled={carregando}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50"
                 >
-                  {carregando ? 'Processando...' : 'Analisar Preços'}
+                  {carregando ? 'Processando...' : 'Analisar & Salvar'}
                 </button>
               </div>
             </div>

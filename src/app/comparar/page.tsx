@@ -31,19 +31,25 @@ export default function CompararPage() {
   const iniciarWebcam = async () => {
     try {
       setMensagem('');
+      // Ativa stream com restrições compatíveis para Desktop e Mobile
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 } },
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
       });
+      
       streamRef.current = stream;
       setStreamAtivo(true);
 
+      // Aguarda a renderização do elemento <video> no DOM
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          videoRef.current.play().catch((err) => console.error("Erro ao dar play no vídeo:", err));
         }
-      }, 100);
-    } catch {
+      }, 150);
+    } catch (err: any) {
+      console.error("Erro ao acessar câmera:", err);
+      setMensagem("⚠️ Câmera não detectada ou permissão negada. Selecione um arquivo.");
       inputArquivoRef.current?.click();
     }
   };
@@ -101,7 +107,6 @@ export default function CompararPage() {
     setMensagem('Analisando ofertas com a IA e salvando no banco...');
 
     try {
-      // ✅ Chamada apontando corretamente para /api/scan-folheto
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
         headers: {
@@ -207,6 +212,7 @@ export default function CompararPage() {
             <div className="w-full flex flex-col items-center space-y-3">
               <video
                 ref={videoRef}
+                autoPlay
                 playsInline
                 muted
                 className="w-full max-h-56 rounded-xl object-cover border border-slate-700"
@@ -255,15 +261,15 @@ export default function CompararPage() {
         )}
       </div>
 
-      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
-        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>📋</span> Listas
+      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
+        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
+          <span className="text-base">📋</span> Listas
         </Link>
         <Link href="/comparar" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span>📷</span> Comparar
+          <span className="text-base">📷</span> Cotação
         </Link>
-        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>📜</span> Histórico
+        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
+          <span className="text-base">📜</span> Histórico
         </Link>
       </nav>
     </div>

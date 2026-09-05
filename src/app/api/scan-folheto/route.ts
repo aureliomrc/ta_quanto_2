@@ -64,11 +64,11 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 5. Chamada para a API Gemini (gemini-2.0-flash)
+    // 5. Chamada para a API Gemini (Atualizado para gemini-3.6-flash)
     let ofertasExtraidas: any[] = [];
     try {
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash', // ✅ Modelo atualizado
         generationConfig: {
           temperature: 0.0,
           maxOutputTokens: 1000,

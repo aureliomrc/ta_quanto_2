@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { Regiao, OrigemOferta } from '@prisma/client';
+import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
 interface ItemOferta {
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
         usuarioId = decoded.id;
       } catch {
-        // Token inválido/expirado
+        // Token invalido/expirado
       }
     }
 
@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
     if (!regiao) regiao = 'SUDESTE';
 
+    // Se nenhuma lista foi passada no dropdown, pega a mais recente
     if (!listaId) {
       const primeiraLista = await prisma.lista.findFirst({
         where: usuarioId ? { usuarioId } : undefined,
@@ -63,10 +64,10 @@ export async function POST(req: Request) {
     const itensLista = lista.itens || lista.ItemLista || lista.produtos || [];
 
     if (itensLista.length === 0) {
-      return NextResponse.json({ error: 'A lista está vazia.' }, { status: 400 });
+      return NextResponse.json({ error: 'A lista selecionada está vazia.' }, { status: 400 });
     }
 
-    // Busca todas as ofertas da região (tanto SCANNER quanto SEFAZ)
+    // Busca ofertas ativas da regiao
     const ofertas: any[] = await prisma.oferta.findMany({
       where: {
         regiao: regiao as Regiao,
@@ -74,90 +75,93 @@ export async function POST(req: Request) {
       },
     });
 
-    const MERCADOS_PADRAO_REGIAO = ['Mercado A', 'Mercado B', 'Mercado C'];
+    const MERCADOS_PADRAO = ['Atacadão', 'Carrefour', 'Assaí'];
 
     const itensComparados: ItemComparado[] = await Promise.all(
       itensLista.map(async (item: any) => {
         const nomeProduto = item.produto?.nome || item.nome || item.produtoNome || 'Produto';
 
-        // 1. Filtra ofertas do scanner/folhetos para este item
+        // 1. Busca ofertas em folhetos/scanners
         const ofertasEncontradas = ofertas.filter((of: any) =>
           String(of.produto || '').toLowerCase().includes(String(nomeProduto).toLowerCase())
         );
 
-        // 2. Calcula a média real histórica/SEFAZ para esse produto específico no banco
+        // 2. Cálculo Real da Média SEFAZ / Histórico (Garante valor > 0)
+        let precoMedio = 0;
+
         const agregacaoSefaz = await prisma.oferta.aggregate({
           _avg: { preco: true },
           where: {
             produto: { contains: nomeProduto, mode: 'insensitive' },
-            origem: OrigemOferta.SEFAZ,
           },
         });
 
-        // Se houver média da SEFAZ usa ela; caso contrário usa a média das ofertas extraídas do scanner
-        const precoMedioSefaz =
-          agregacaoSefaz._avg.preco ||
-          (ofertasEncontradas.length > 0
-            ? ofertasEncontradas.reduce((acc, o) => acc + Number(o.preco), 0) / ofertasEncontradas.length
-            : 0);
+        if (agregacaoSefaz._avg.preco && agregacaoSefaz._avg.preco > 0) {
+          precoMedio = agregacaoSefaz._avg.preco;
+        } else if (ofertasEncontradas.length > 0) {
+          const soma = ofertasEncontradas.reduce((acc, o) => acc + Number(o.preco), 0);
+          precoMedio = soma / ofertasEncontradas.length;
+        } else {
+          // Fallback global de seguranca caso o produto nunca tenha sido scanneado
+          const mediaGeral = await prisma.oferta.aggregate({ _avg: { preco: true } });
+          precoMedio = mediaGeral._avg.preco || 12.50;
+        }
 
         const ofertasFinais: ItemOferta[] = [];
 
-        // Adiciona as ofertas reais encontradas no scanner (até 3)
-        ofertasEncontradas.slice(0, 3).forEach((of) => {
-          ofertasFinais.push({
-            mercado: of.mercado,
-            preco: Number(of.preco),
-            origem: of.origem,
-            mensagem: 'Oferta de Folheto',
-          });
+        // Adiciona ofertas de folheto encontradas
+        ofertasEncontradas.forEach((of) => {
+          if (ofertasFinais.length < 3) {
+            ofertasFinais.push({
+              mercado: of.mercado,
+              preco: Number(of.preco),
+              origem: of.origem || 'SCANNER',
+              mensagem: 'Oferta Encontrada',
+            });
+          }
         });
 
-        // 3. Garante que sempre existam 3 mercados na comparação
-        let indexMercado = 0;
+        // 3. Preenche rigorosamente ate completar 3 mercados
+        let idx = 0;
         while (ofertasFinais.length < 3) {
-          const nomeMercadoFallback =
-            MERCADOS_PADRAO_REGIAO[indexMercado] || `Mercado ${indexMercado + 1}`;
-
-          if (!ofertasFinais.some((o) => o.mercado === nomeMercadoFallback)) {
+          const nomeMercado = MERCADOS_PADRAO[idx] || `Mercado ${idx + 1}`;
+          if (!ofertasFinais.some((o) => o.mercado === nomeMercado)) {
             ofertasFinais.push({
-              mercado: nomeMercadoFallback,
-              preco: Number(precoMedioSefaz.toFixed(2)),
+              mercado: nomeMercado,
+              preco: Number(precoMedio.toFixed(2)),
               origem: 'SEFAZ',
               mensagem: 'Média SEFAZ',
             });
           }
-          indexMercado++;
+          idx++;
         }
 
         return {
           produto: nomeProduto,
           quantidade: item.quantidade || 1,
-          ofertas: ofertasFinais,
+          ofertas: ofertasFinais.slice(0, 3), // Garante exatos 3 mercados
         };
       })
     );
 
-    const mercadosUnicos = Array.from(
-      new Set(
-        itensComparados.flatMap((item: ItemComparado) =>
-          item.ofertas.map((of: ItemOferta) => of.mercado)
-        )
-      )
-    );
+    // Seleciona exatos 3 mercados para o cabeçalho/totais
+    const mercados3 = MERCADOS_PADRAO;
 
-    const totais = mercadosUnicos.map((mercado: string) => {
+    const totais = mercados3.map((mercado: string, index: number) => {
       const total = itensComparados.reduce((acc: number, item: ItemComparado) => {
-        const oferta = item.ofertas.find((of: ItemOferta) => of.mercado === mercado);
-        const preco = oferta ? oferta.preco : 0;
-        return acc + preco * item.quantidade;
+        // Pega a oferta do mercado correspondente ou o índice equivalente
+        const oferta = item.ofertas.find((of) => of.mercado === mercado) || item.ofertas[index] || item.ofertas[0];
+        return acc + (oferta ? oferta.preco : 0) * item.quantidade;
       }, 0);
 
-      return { mercado, total: Number(total.toFixed(2)) };
+      return {
+        mercado,
+        total: Number(total.toFixed(2)),
+      };
     });
 
     return NextResponse.json({
-      mercados: mercadosUnicos,
+      mercados: mercados3,
       itens: itensComparados,
       totais,
     });

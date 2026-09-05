@@ -4,8 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Regiao } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 
-const apiKey = process.env.GEMINI_API_KEY || '';
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const responseSchema: ResponseSchema = {
   type: SchemaType.ARRAY,
@@ -21,18 +20,15 @@ const responseSchema: ResponseSchema = {
 };
 
 export async function POST(req: Request) {
-  try {
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Chave GEMINI_API_KEY não configurada no servidor.' },
-        { status: 500 }
-      );
-    }
+  // Inicia a contagem total
+  console.time('⏱️ Tempo TOTAL da requisição');
 
+  try {
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
     if (!token) {
+      console.timeEnd('⏱️ Tempo TOTAL da requisição');
       return NextResponse.json({ error: 'Você precisa estar logado.' }, { status: 401 });
     }
 
@@ -41,22 +37,27 @@ export async function POST(req: Request) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
       usuarioId = decoded.id;
     } catch {
-      return NextResponse.json({ error: 'Sessão expirada. Faça login novamente.' }, { status: 401 });
+      console.timeEnd('⏱️ Tempo TOTAL da requisição');
+      return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
     }
 
+    // 1. Medir o tempo para receber a imagem do cliente
+    console.time('📸 1. Receber e converter imagem');
     const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    const mercado = (formData.get('mercado') as string) || 'Mercado Geral';
+    const file = formData.get('file') as Blob | null;
+    const mercado = (formData.get('mercado') as string) || 'Mercado';
     const regiaoInput = (formData.get('regiao') as string) || 'SUDESTE';
 
     if (!file) {
+      console.timeEnd('⏱️ Tempo TOTAL da requisição');
       return NextResponse.json({ error: 'Nenhuma imagem enviada.' }, { status: 400 });
     }
 
-    const mimeType = file.type || 'image/jpeg';
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.timeEnd('📸 1. Receber e converter imagem');
 
+    // Configuração do Gemini
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
       generationConfig: {
@@ -67,21 +68,26 @@ export async function POST(req: Request) {
       },
     });
 
-    const prompt = `Extraia a lista de produtos e preços da foto do encarte do mercado "${mercado}".`;
+    const prompt = `Liste até 15 produtos e preços visíveis da foto do mercado "${mercado}".`;
 
+    // 2. Medir o tempo de resposta da API do Gemini
+    console.time('🤖 2. Processamento IA (Gemini API)');
     const result = await model.generateContent([
       prompt,
       {
         inlineData: {
           data: buffer.toString('base64'),
-          mimeType: mimeType,
+          mimeType: 'image/jpeg',
         },
       },
     ]);
+    console.timeEnd('🤖 2. Processamento IA (Gemini API)');
 
     const responseText = result.response.text();
     const ofertasExtraidas = JSON.parse(responseText);
 
+    // 3. Salvar no Banco de Dados (Prisma)
+    console.time('💾 3. Salvando ofertas no banco');
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
@@ -99,6 +105,9 @@ export async function POST(req: Request) {
         data: ofertasParaInserir,
       });
     }
+    console.timeEnd('💾 3. Salvando ofertas no banco');
+
+    console.timeEnd('⏱️ Tempo TOTAL da requisição');
 
     return NextResponse.json({
       success: true,
@@ -106,9 +115,10 @@ export async function POST(req: Request) {
       itens: ofertasExtraidas,
     });
   } catch (error: any) {
-    console.error('Erro detalhado no Scanner:', error);
+    console.timeEnd('⏱️ Tempo TOTAL da requisição');
+    console.error('Erro na extração:', error);
     return NextResponse.json(
-      { error: error.message || 'Erro interno ao analisar imagem.' },
+      { error: error.message || 'Erro ao processar imagem.' },
       { status: 500 }
     );
   }

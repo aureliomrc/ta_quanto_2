@@ -47,7 +47,7 @@ export default function ListasPage() {
       }
     } catch (err) {
       console.error('Erro ao buscar listas:', err);
-    } finally {
+    } font
       setCarregando(false);
     }
   };
@@ -84,9 +84,13 @@ export default function ListasPage() {
 
   const listaAtual = listas.find((l) => l.id === listaAtivaId) || listas[0];
 
+  // --- CRIAÇÃO DE LISTA EM MAIÚSCULAS ---
   const handleCriarLista = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaListaNome.trim()) return;
+
+    // Converte o nome da lista para MAIÚSCULAS
+    const nomeEmMaiusculo = novaListaNome.trim().toUpperCase();
 
     try {
       const token = localStorage.getItem('token');
@@ -96,7 +100,7 @@ export default function ListasPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token || ''}`,
         },
-        body: JSON.stringify({ nome: novaListaNome }),
+        body: JSON.stringify({ nome: nomeEmMaiusculo }),
       });
 
       if (res.ok) {
@@ -110,7 +114,7 @@ export default function ListasPage() {
     }
   };
 
-  // --- AÇÃO OTIMISTA (SEM DELAY NA INTERFACE) ---
+  // --- AÇÃO OTIMISTA COM CONVERSÃO PARA MAIÚSCULAS ---
   const handleAcaoItem = async (
     e?: React.FormEvent,
     acao: 'ADD_ITEM' | 'UPDATE_QTD' | 'DELETE_ITEM' = 'ADD_ITEM',
@@ -119,7 +123,8 @@ export default function ListasPage() {
     if (e) e.preventDefault();
     if (!listaAtual) return;
 
-    const itemTexto = (payload.nomeItem || novoItemNome).trim();
+    // Converte o nome do item para MAIÚSCULAS
+    const itemTexto = (payload.nomeItem || novoItemNome).trim().toUpperCase();
     if (acao === 'ADD_ITEM' && !itemTexto) return;
 
     // Guarda o estado anterior caso precise reverter
@@ -223,7 +228,6 @@ export default function ListasPage() {
     }
   };
 
-  // Cálculo de progresso de itens checados na lista ativa
   const totalItens = listaAtual?.itens?.length || 0;
   const concluidosCount = listaAtual?.itens?.filter((i) => checados[i.id]).length || 0;
 
@@ -257,7 +261,7 @@ export default function ListasPage() {
               value={novaListaNome}
               onChange={(e) => setNovaListaNome(e.target.value)}
               placeholder="Nome da nova lista..."
-              className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             <button
               type="submit"
@@ -275,7 +279,7 @@ export default function ListasPage() {
               <button
                 key={l.id}
                 onClick={() => setListaAtivaId(l.id)}
-                className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all border ${
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all border uppercase ${
                   listaAtivaId === l.id || (!listaAtivaId && l === listas[0])
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -297,7 +301,7 @@ export default function ListasPage() {
             value={novoItemNome}
             onChange={(e) => setNovoItemNome(e.target.value)}
             placeholder="Digite o produto..."
-            className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button
             type="submit"
@@ -353,7 +357,7 @@ export default function ListasPage() {
             ) : (
               <div className="divide-y divide-slate-100 space-y-1">
                 {listaAtual.itens.map((item, index) => {
-                  const nome = item.nome || item.produto || 'Item sem nome';
+                  const nome = (item.nome || item.produto || 'Item sem nome').toUpperCase();
                   const isChecked = !!checados[item.id];
 
                   return (
@@ -373,7 +377,7 @@ export default function ListasPage() {
                         />
                         <span
                           onClick={() => toggleCheck(item.id)}
-                          className={`font-semibold cursor-pointer select-none ${
+                          className={`font-semibold cursor-pointer select-none uppercase ${
                             isChecked
                               ? 'line-through text-slate-400'
                               : 'text-slate-800'

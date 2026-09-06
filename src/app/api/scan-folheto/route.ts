@@ -23,6 +23,9 @@ const responseSchema: ResponseSchema = {
   },
 };
 
+// Função auxiliar para aguardar um determinado número de milissegundos
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function POST(req: Request) {
   try {
     // 1. Validação de Autenticação JWT
@@ -64,37 +67,66 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 5. Chamada Direta com gemini-3.6-flash
+    // 5. Chamada com Retry (Tentativas Automáticas para tratar erros 503 / 429)
     let ofertasExtraidas: any[] = [];
-    try {
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-3.6-flash',
-        generationConfig: {
-          temperature: 0.0,
-          maxOutputTokens: 1000,
-          responseMimeType: 'application/json',
-          responseSchema: responseSchema,
-        },
-      });
+    const maxTentativas = 3;
+    let ultimoErro: any = null;
 
-      const prompt = `Liste até 15 produtos e preços visíveis na foto do folheto do mercado "${mercado}".`;
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-3.6-flash',
+      generationConfig: {
+        temperature: 0.0,
+        maxOutputTokens: 1000,
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema,
+      },
+    });
 
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: cleanBase64,
-            mimeType: mimeType,
+    const prompt = `Liste até 15 produtos e preços visíveis na foto do folheto do mercado "${mercado}".`;
+
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+      try {
+        const result = await model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType: mimeType,
+            },
           },
-        },
-      ]);
+        ]);
 
-      const responseText = result.response.text();
-      ofertasExtraidas = JSON.parse(responseText);
-    } catch (geminiErr: any) {
-      console.error('Erro Gemini:', geminiErr);
+        const responseText = result.response.text();
+        ofertasExtraidas = JSON.parse(responseText);
+
+        // Se chegou até aqui, a chamada foi um sucesso! Interrompe o loop de tentativas.
+        ultimoErro = null;
+        break;
+      } catch (geminiErr: any) {
+        ultimoErro = geminiErr;
+        const msg = geminiErr?.message || '';
+        const eErroTemporario = msg.includes('503') || msg.includes('429') || msg.includes('Service Unavailable') || msg.includes('high demand');
+
+        console.warn(`[Gemini Try ${tentativa}/${maxTentativas}] Falha ao processar: ${msg}`);
+
+        // Se for erro temporário de alta demanda (503) ou rate limit (429) e ainda houver tentativas restante:
+        if (eErroTemporario && tentativa < maxTentativas) {
+          // Aguarda um tempo progressivo (Ex: 2s na 1ª falha, 4s na 2ª falha) antes de tentar novamente
+          const tempoEspera = tentativa * 2000;
+          console.log(`Aguardando ${tempoEspera / 1000}s para tentar novamente...`);
+          await delay(tempoEspera);
+        } else if (!eErroTemporario) {
+          // Se for outro erro (ex: sintaxe ou chave inválida), não adianta tentar novamente
+          break;
+        }
+      }
+    }
+
+    // Se após todas as tentativas o erro persistir
+    if (ultimoErro) {
+      console.error('Erro Final no Gemini após tentativas:', ultimoErro);
       return NextResponse.json(
-        { error: `Erro na análise do Gemini: ${geminiErr.message || 'Falha ao processar imagem.'}` },
+        { error: `Erro na análise do Gemini: ${ultimoErro.message || 'O serviço do Gemini está temporariamente indisponível. Tente novamente em instantes.'}` },
         { status: 500 }
       );
     }

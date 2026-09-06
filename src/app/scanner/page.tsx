@@ -129,8 +129,21 @@ export default function LeitorFolhetoPage() {
     }
   };
 
+  // Estilos brutos para travar a cor no celular ignorando o Dark Mode
+  const mobileInputStyle: React.CSSProperties = {
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    WebkitTextFillColor: '#0f172a',
+    WebkitBoxShadow: '0 0 0px 1000px #ffffff inset',
+    opacity: 1,
+    colorScheme: 'light',
+  };
+
   return (
-    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans text-slate-900">
+    <div 
+      className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans text-slate-900"
+      style={{ colorScheme: 'light' }}
+    >
       <div className="space-y-4">
         <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
           <span className="text-2xl">📷</span>
@@ -139,40 +152,43 @@ export default function LeitorFolhetoPage() {
           </h1>
         </header>
 
-        {/* Card adaptado com resets do sistema operacional do celular */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
+        {/* Card forçado em Modo Claro para Mobile */}
+        <div 
+          className="bg-white p-4 rounded-2xl border border-slate-300 space-y-3 shadow-md"
+          style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+        >
           <div>
-            <label className="block text-xs font-black text-slate-800 mb-1 tracking-wide uppercase">
-              Mercado
+            <label className="block text-xs font-black mb-1 tracking-wide uppercase" style={{ color: '#0f172a' }}>
+              MERCADO
             </label>
             <input
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value.toUpperCase())}
               placeholder="EX: ASSAÍ, CARREFOUR, ATACADÃO..."
-              style={{ WebkitTextFillColor: '#0f172a', opacity: 1 }}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+              style={mobileInputStyle}
+              className="w-full border-2 border-slate-400 rounded-xl px-3 py-2.5 text-sm font-black uppercase focus:outline-none focus:border-emerald-600"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-black text-slate-800 mb-1 tracking-wide uppercase">
-              Região do Folheto
+            <label className="block text-xs font-black mb-1 tracking-wide uppercase" style={{ color: '#0f172a' }}>
+              REGIÃO DO FOLHETO
             </label>
             <div className="relative">
               <select
                 value={regiao}
                 onChange={(e) => setRegiao(e.target.value)}
-                style={{ WebkitTextFillColor: '#0f172a', opacity: 1 }}
-                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none shadow-inner"
+                style={mobileInputStyle}
+                className="w-full border-2 border-slate-400 rounded-xl px-3 py-2.5 text-sm font-black uppercase focus:outline-none focus:border-emerald-600 appearance-none"
               >
-                <option value="SUDESTE" className="text-slate-900 bg-white">SUDESTE</option>
-                <option value="SUL" className="text-slate-900 bg-white">SUL</option>
-                <option value="NORDESTE" className="text-slate-900 bg-white">NORDESTE</option>
-                <option value="CENTRO_OESTE" className="text-slate-900 bg-white">CENTRO-OESTE</option>
-                <option value="NORTE" className="text-slate-900 bg-white">NORTE</option>
+                <option value="SUDESTE" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>SUDESTE</option>
+                <option value="SUL" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>SUL</option>
+                <option value="NORDESTE" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>NORDESTE</option>
+                <option value="CENTRO_OESTE" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>CENTRO-OESTE</option>
+                <option value="NORTE" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>NORTE</option>
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-700 font-bold text-xs">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 font-bold text-xs" style={{ color: '#0f172a' }}>
                 ▼
               </div>
             </div>
@@ -264,13 +280,19 @@ export default function LeitorFolhetoPage() {
         </div>
 
         {mensagem && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-black text-slate-900 shadow-sm">
+          <div 
+            className="p-3 rounded-xl border border-slate-300 text-center text-xs font-black shadow-sm"
+            style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+          >
             {mensagem}
           </div>
         )}
       </div>
 
-      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10">
+      <nav 
+        className="border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10"
+        style={{ backgroundColor: '#ffffff' }}
+      >
         <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📋</span> Listas
         </Link>

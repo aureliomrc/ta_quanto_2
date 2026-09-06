@@ -46,7 +46,7 @@ export default function HistoricoPage() {
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
 
-  // 1. Carrega as listas de compras do usuário
+  // 1. Carrega todas as listas salvas do usuário
   useEffect(() => {
     const carregarListas = async () => {
       try {
@@ -64,14 +64,14 @@ export default function HistoricoPage() {
           }
         }
       } catch (err) {
-        console.error('Erro ao buscar listas:', err);
+        console.error('Erro ao carregar listas do usuário:', err);
       }
     };
 
     carregarListas();
   }, []);
 
-  // 2. Busca histórico e calcula detalhamento da cotação
+  // 2. Busca o histórico de escaneamentos e realiza a comparação completa com a lista selecionada
   useEffect(() => {
     const carregarDados = async () => {
       setCarregando(true);
@@ -85,7 +85,7 @@ export default function HistoricoPage() {
           const rawData = await res.json();
           const ofertasOuHistorico = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
 
-          // Agrupa histórico de leituras por data
+          // Agrupa as ofertas por lote de escaneamento
           const mapaHistorico: { [chave: string]: EscaneamentoUnico } = {};
 
           ofertasOuHistorico.forEach((item: any, index: number) => {
@@ -125,43 +125,49 @@ export default function HistoricoPage() {
 
           setHistorico(Object.values(mapaHistorico));
 
-          // 3. Monta Cotação e detalhamento dos produtos comparados por mercado
-          const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
+          // 3. Pega os itens da lista que o usuário escolheu
           const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
-          const itensDaLista = listaAtual?.itens || [
-            { produto: 'Arroz 5kg', quantidade: 1 },
-            { produto: 'Feijão 1kg', quantidade: 2 },
-            { produto: 'Óleo de Soja', quantidade: 1 },
-          ];
+          const itensDaListaEscolhida = listaAtual?.itens || [];
+
+          const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
 
           const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
             let totalMercado = 0;
             let usaMediaSefaz = false;
             const detProdutos: ItemDetalhamentoCotacao[] = [];
 
-            itensDaLista.forEach((itemLista) => {
+            // Percorre TODOS os itens contidos na lista do usuário
+            itensDaListaEscolhida.forEach((itemLista) => {
+              const nomeItem = itemLista.produto.trim().toLowerCase();
+              const qtd = itemLista.quantidade || 1;
+
+              // Tenta localizar no banco de dados o produto escaneado correspondente no mercado
               const itemEncontrado = ofertasOuHistorico.find(
                 (o: any) =>
-                  o.produto?.toLowerCase().includes(itemLista.produto.toLowerCase()) &&
-                  o.mercado?.toLowerCase() === mercadoNome.toLowerCase()
+                  o.produto &&
+                  o.produto.toLowerCase().includes(nomeItem) &&
+                  o.mercado &&
+                  o.mercado.toLowerCase().includes(mercadoNome.toLowerCase())
               );
 
               if (itemEncontrado && itemEncontrado.preco) {
+                // Se encontrou no scanner, usa o Preço Real registrado
                 const pUnit = Number(itemEncontrado.preco);
-                totalMercado += pUnit * itemLista.quantidade;
+                totalMercado += pUnit * qtd;
                 detProdutos.push({
                   produto: itemLista.produto,
-                  quantidade: itemLista.quantidade,
+                  quantidade: qtd,
                   precoUnitario: pUnit,
                   isSefaz: false,
                 });
               } else {
-                const mediaSefazEstimada = 14.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
-                totalMercado += mediaSefazEstimada * itemLista.quantidade;
+                // Se não encontrou, aplica o valor da Média SEFAZ
+                const mediaSefazEstimada = 12.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
+                totalMercado += mediaSefazEstimada * qtd;
                 usaMediaSefaz = true;
                 detProdutos.push({
                   produto: itemLista.produto,
-                  quantidade: itemLista.quantidade,
+                  quantidade: qtd,
                   precoUnitario: mediaSefazEstimada,
                   isSefaz: true,
                 });
@@ -179,7 +185,7 @@ export default function HistoricoPage() {
           setCotacaoMercados(cotacaoCalculada);
         }
       } catch (err) {
-        console.error('Erro ao buscar dados:', err);
+        console.error('Erro no cálculo de cotação:', err);
       } finally {
         setCarregando(false);
       }
@@ -214,10 +220,10 @@ export default function HistoricoPage() {
           </select>
         </header>
 
-        {/* SELEÇÃO DA LISTA DE COMPRAS */}
+        {/* SELEÇÃO DA LISTA DO USUÁRIO */}
         <section className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-            Escolha a Lista para Cotação:
+            Lista Selecionada para Comparação:
           </label>
           <select
             value={listaSelecionadaId}
@@ -225,7 +231,7 @@ export default function HistoricoPage() {
             className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-emerald-500"
           >
             {listas.length === 0 ? (
-              <option value="">Nenhuma lista (Usando lista padrão)</option>
+              <option value="">Nenhuma lista cadastrada</option>
             ) : (
               listas.map((lista) => (
                 <option key={lista.id} value={lista.id}>
@@ -236,10 +242,10 @@ export default function HistoricoPage() {
           </select>
         </section>
 
-        {/* CARDS DOS MERCADOS COM DETALHAMENTO EXPANSÍVEL */}
+        {/* COMPARATIVO NOS MERCADOS DA REGIÃO */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-            Comparativo Regional ({regiaoSelecionada})
+            Comparativo nos Mercados ({regiaoSelecionada})
           </p>
 
           <div className="grid grid-cols-3 gap-2">
@@ -267,19 +273,19 @@ export default function HistoricoPage() {
                     R$ {m.total.toFixed(2)}
                   </p>
                   <p className={`text-[8px] font-bold ${eOMaisBarato ? 'text-emerald-100' : 'text-emerald-600'}`}>
-                    {estaAberto ? '▲ Ocultar' : '🔍 Ver Produtos'}
+                    {estaAberto ? '▲ Ocultar' : `🔍 (${m.itensComparados.length}) Itens`}
                   </p>
                 </div>
               );
             })}
           </div>
 
-          {/* PAINEL REVELADO AO CLICAR EM UM MERCADO */}
+          {/* DETALHAMENTO DE PRODUTOS COMPAREDOS AO ABRIR O CARD DO MERCADO */}
           {mercadoAberto && (
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2 animate-fadeIn">
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                 <p className="text-xs font-black text-slate-800">
-                  🛒 Itens cotados em <span className="text-emerald-600">{mercadoAberto}</span>:
+                  🛒 Todos os itens da lista em <span className="text-emerald-600">{mercadoAberto}</span>:
                 </p>
                 <button
                   type="button"
@@ -290,7 +296,7 @@ export default function HistoricoPage() {
                 </button>
               </div>
 
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              <div className="space-y-1.5 max-h-56 overflow-y-auto">
                 {cotacaoMercados
                   .find((m) => m.nome === mercadoAberto)
                   ?.itensComparados.map((item, i) => (
@@ -306,9 +312,13 @@ export default function HistoricoPage() {
                         <p className="font-black text-slate-900">
                           R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
                         </p>
-                        {item.isSefaz && (
+                        {item.isSefaz ? (
                           <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1 rounded">
                             Média SEFAZ
+                          </span>
+                        ) : (
+                          <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">
+                            Preço Real Escaneado
                           </span>
                         )}
                       </div>
@@ -321,7 +331,7 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO ÚNICO EM CASCATA */}
+        {/* HISTÓRICO DE LEITURA */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Histórico Único de Leitura

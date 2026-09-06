@@ -384,7 +384,7 @@ export default function ListasPage() {
           <span>📋</span> Listas
         </Link>
         <Link href="/comparar" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>🏷️</span> Cotação
+          <span>📷</span> Folheto/Gondola
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📊</span> Comparação/Histórico

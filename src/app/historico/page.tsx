@@ -548,7 +548,7 @@ export default function HistoricoPage() {
           <span className="text-base">📷</span> Cotação
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span className="text-base">📊</span> Histórico
+          <span className="text-base">📊</span> Comparação/Histórico
         </Link>
       </nav>
     </div>

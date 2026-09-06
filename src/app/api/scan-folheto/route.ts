@@ -23,21 +23,18 @@ const responseSchema: ResponseSchema = {
   },
 };
 
-// Função auxiliar para aguardar um determinado número de milissegundos
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Função auxiliar para sanitizar, extrair e reparar JSONs truncados ou com Markdown
 function extrairETratarJSON(texto: string): any[] {
   let limpo = texto.trim();
 
-  // 1. Remove blocos de código Markdown se houver
+  // Remove formatação markdown se houver
   if (limpo.startsWith('```json')) {
     limpo = limpo.replace(/^```json\s*/, '').replace(/\s*```$/, '');
   } else if (limpo.startsWith('```')) {
     limpo = limpo.replace(/^```\s*/, '').replace(/\s*```$/, '');
   }
 
-  // 2. Garante que pegamos apenas o array de produtos [...]
   const primeiroColchete = limpo.indexOf('[');
   const ultimoColchete = limpo.lastIndexOf(']');
 
@@ -48,7 +45,6 @@ function extrairETratarJSON(texto: string): any[] {
   try {
     return JSON.parse(limpo);
   } catch (err) {
-    // 3. Tenta recuperar o JSON se a resposta foi cortada no final
     if (!limpo.endsWith(']')) {
       const indiceUltimoObjetoFechado = limpo.lastIndexOf('}');
       if (indiceUltimoObjetoFechado !== -1) {
@@ -62,7 +58,7 @@ function extrairETratarJSON(texto: string): any[] {
 
 export async function POST(req: Request) {
   try {
-    // 1. Validação de Autenticação JWT
+    // 1. Validação JWT
     const authHeader = req.headers.get('authorization');
     const token = authHeader?.split(' ')[1];
 
@@ -78,12 +74,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Sessão expirada ou token inválido: ${err.message}` }, { status: 401 });
     }
 
-    // 2. Validação da Chave da API Gemini
     if (!apiKey) {
       return NextResponse.json({ error: 'Chave GEMINI_API_KEY não configurada no .env do servidor.' }, { status: 500 });
     }
 
-    // 3. Leitura dos Dados Recebidos no Body
+    // 2. Leitura do Body
     const body = await req.json();
     const { imagemBase64, mercado = 'Mercado', regiao = 'SUDESTE' } = body;
 
@@ -91,7 +86,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma imagem foi recebida pelo servidor.' }, { status: 400 });
     }
 
-    // 4. Limpeza da String Base64 e MIME Type
+    // 3. Processamento da imagem
     let cleanBase64 = imagemBase64;
     let mimeType = 'image/jpeg';
 
@@ -101,23 +96,22 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 5. Chamada com Retry e Limpeza de Payload JSON
     let ofertasExtraidas: any[] = [];
     const maxTentativas = 3;
     let ultimoErro: any = null;
 
-    // Utilizando um modelo estável com suporte multimodal (gemini-2.5-flash ou gemini-1.5-flash)
+    // Configurado com o modelo `gemini-3.6-flash`
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.6-flash',
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 2048, // Aumentado para 2048 para evitar truncamento de lista no meio
+        maxOutputTokens: 2048,
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       },
     });
 
-    const prompt = `Analise o folheto do mercado "${mercado}". Liste até 15 produtos e preços visíveis na imagem.`;
+    const prompt = `Analise a imagem do folheto do mercado "${mercado}". Identifique e extraia os produtos e seus respectivos preços. Retorne o resultado formatado como um array JSON.`;
 
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       try {
@@ -132,45 +126,29 @@ export async function POST(req: Request) {
         ]);
 
         const responseText = result.response.text();
-        
-        // Tratamento e limpeza segura do JSON antes do JSON.parse
         ofertasExtraidas = extrairETratarJSON(responseText);
 
-        // Se chegou até aqui com sucesso, interrompe o loop
         ultimoErro = null;
         break;
       } catch (geminiErr: any) {
         ultimoErro = geminiErr;
-        const msg = geminiErr?.message || '';
-        const eErroTemporario = 
-          msg.includes('503') || 
-          msg.includes('429') || 
-          msg.includes('Service Unavailable') || 
-          msg.includes('high demand') ||
-          msg.includes('JSON');
+        console.error(`[Erro Gemini 3.6 Tentativa ${tentativa}]:`, geminiErr?.message || geminiErr);
 
-        console.warn(`[Gemini Try ${tentativa}/${maxTentativas}] Falha ao processar: ${msg}`);
-
-        if (eErroTemporario && tentativa < maxTentativas) {
-          const tempoEspera = tentativa * 2000;
-          console.log(`Aguardando ${tempoEspera / 1000}s para tentar novamente...`);
-          await delay(tempoEspera);
-        } else if (!eErroTemporario) {
-          break;
+        if (tentativa < maxTentativas) {
+          await delay(tentativa * 1500);
         }
       }
     }
 
-    // Se após todas as tentativas o erro persistir
     if (ultimoErro) {
-      console.error('Erro Final no Gemini após tentativas:', ultimoErro);
+      const detalheErro = ultimoErro.message || String(ultimoErro);
       return NextResponse.json(
-        { error: `Erro na análise do Gemini: Não foi possível processar o folheto. Tente uma foto mais nítida.` },
+        { error: `Erro na análise do Gemini: ${detalheErro}` },
         { status: 500 }
       );
     }
 
-    // 6. Salvando no Banco de Dados via Prisma
+    // 4. Salvar no Banco via Prisma
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
       const regiaoFormatada = regiao.replace(/-/g, '_').toUpperCase();
       const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
@@ -185,17 +163,9 @@ export async function POST(req: Request) {
         expiresAt: expiresAt,
       }));
 
-      try {
-        await prisma.oferta.createMany({
-          data: ofertasParaInserir,
-        });
-      } catch (prismaErr: any) {
-        console.error('Erro Prisma:', prismaErr);
-        return NextResponse.json(
-          { error: `Erro ao salvar registros no banco: ${prismaErr.message}` },
-          { status: 500 }
-        );
-      }
+      await prisma.oferta.createMany({
+        data: ofertasParaInserir,
+      });
     }
 
     return NextResponse.json({

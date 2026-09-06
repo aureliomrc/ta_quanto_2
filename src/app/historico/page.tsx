@@ -9,6 +9,8 @@ interface ItemEscaneado {
   preco: number;
   mercado: string;
   regiao?: string;
+  usuarioId?: string;
+  usuario?: { id: string; nome?: string };
   createdAt: string;
 }
 
@@ -56,14 +58,27 @@ export default function HistoricoPage() {
   const [cotacaoMercados, setCotacaoMercados] = useState<CotacaoMercado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
+  const [usuarioAtualId, setUsuarioAtualId] = useState<string>('');
 
-  // Helper para estimar preço SEFAZ realista baseado na categoria e peso/volume do produto
+  // Identifica o ID do usuário logado via Token para controlar permissão de exclusão
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload?.id) setUsuarioAtualId(payload.id);
+      }
+    } catch (e) {
+      console.error('Erro ao decodificar token:', e);
+    }
+  }, []);
+
+  // Estimativa Inteligente Média SEFAZ
   const estimarPrecoSefazInteligente = (nomeProduto: string, mercadoIndex: number): number => {
     const nome = nomeProduto.toLowerCase();
-    let precoBase = 12.00; // Valor padrão genérico
+    let precoBase = 12.00;
 
-    // 1. Identificação por palavra-chave da categoria
-    if (nome.includes('carne') || nome.includes('bovino') || nome.includes('picanha') || nome.includes('alcatra')) {
+    if (nome.includes('carne') || nome.includes('bovino') || nome.includes('picanha')) {
       precoBase = 38.90;
     } else if (nome.includes('arroz')) {
       precoBase = 6.20;
@@ -77,11 +92,10 @@ export default function HistoricoPage() {
       precoBase = 16.50;
     } else if (nome.includes('açúcar') || nome.includes('acucar')) {
       precoBase = 4.50;
-    } else if (nome.includes('frango') || nome.includes('peito')) {
+    } else if (nome.includes('frango')) {
       precoBase = 18.90;
     }
 
-    // 2. Extração de multiplicador de peso ou volume (ex: "3kg", "4,5kg", "7.5L")
     const regexPeso = /(\d+([.,]\d+)?)\s*(kg|l|g|ml)/i;
     const match = nome.match(regexPeso);
 
@@ -96,12 +110,10 @@ export default function HistoricoPage() {
       }
     }
 
-    // 3. Aplica pequena variação por mercado (Assaí, Carrefour, Atacadão)
     const variacaoMercado = mercadoIndex === 0 ? 0.96 : mercadoIndex === 1 ? 1.03 : 0.98;
     return Number((precoBase * variacaoMercado).toFixed(2));
   };
 
-  // Padronizador dos itens da lista do usuário
   const extrairItensDaLista = (lista: ListaUsuario | undefined): ItemListaPadronizado[] => {
     if (!lista) return [];
     const itensBrutos = lista.itens || lista.items || lista.ItemLista || [];
@@ -123,7 +135,6 @@ export default function HistoricoPage() {
     return formatados;
   };
 
-  // Carrega as listas do usuário
   useEffect(() => {
     const carregarListas = async () => {
       try {
@@ -148,7 +159,7 @@ export default function HistoricoPage() {
     carregarListas();
   }, []);
 
-  // Busca e filtra estritamente os dados do Histórico e Ofertas da Região Selecionada
+  // Busca GLOBAL de ofertas da região (compartilhadas entre todos os usuários)
   const carregarDadosDaRegiao = async () => {
     setCarregando(true);
     try {
@@ -209,7 +220,7 @@ export default function HistoricoPage() {
     carregarDadosDaRegiao();
   }, [regiaoSelecionada]);
 
-  // Recalcula a cotação usando escaneamentos ou a nova Média SEFAZ Inteligente
+  // Cotação comparativa utilizando as ofertas escaneadas globais da região
   useEffect(() => {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
@@ -224,6 +235,7 @@ export default function HistoricoPage() {
         const nomeItem = itemLista.produto.trim().toLowerCase();
         const qtd = itemLista.quantidade || 1;
 
+        // Procura ofertas da comunidade/todos os usuários para aquele mercado na região
         const itemEncontrado = ofertasRegiao.find(
           (o) =>
             o.produto &&
@@ -242,7 +254,6 @@ export default function HistoricoPage() {
             isSefaz: false,
           });
         } else {
-          // Preço SEFAZ Calculado com base no nome/medida do produto
           const mediaSefazCalculada = estimarPrecoSefazInteligente(itemLista.produto, idx);
           totalMercado += mediaSefazCalculada * qtd;
           usaMediaSefaz = true;
@@ -437,17 +448,17 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO ISOLADO DA REGIÃO */}
+        {/* HISTÓRICO GLOBAL DA REGIÃO */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-            Histórico da Região: <span className="text-emerald-600 font-bold">{regiaoSelecionada}</span> (Até 72h)
+            Histórico da Comunidade ({regiaoSelecionada}):
           </p>
 
           {carregando ? (
-            <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico...</p>
+            <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico público...</p>
           ) : historico.length === 0 ? (
             <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs">
-              Nenhum produto escaneado na região <strong className="text-slate-600">{regiaoSelecionada}</strong>.
+              Nenhum produto escaneado na região <strong className="text-slate-600">{regiaoSelecionada}</strong> até o momento.
             </div>
           ) : (
             <div className="space-y-2">
@@ -464,7 +475,7 @@ export default function HistoricoPage() {
                           {grupo.mercado} - <span className="text-slate-500">{grupo.data}</span>
                         </p>
                         <p className="text-[10px] text-slate-400 font-medium">
-                          {grupo.itens.length} produto(s) escaneado(s)
+                          {grupo.itens.length} produto(s) no folheto/escaneamento
                         </p>
                       </div>
                     </div>
@@ -479,33 +490,47 @@ export default function HistoricoPage() {
                   </summary>
 
                   <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-1.5">
-                    {grupo.itens.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-200"
-                      >
-                        <div className="pr-2">
-                          <p className="font-bold text-slate-800 text-xs">{item.produto}</p>
-                          <span className="text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-0.5">
-                            ⏳ {calcularTempoRestante(item.createdAt)}
-                          </span>
-                        </div>
+                    {grupo.itens.map((item) => {
+                      const donoDoItem = (item.usuarioId && item.usuarioId === usuarioAtualId) || (item.usuario?.id === usuarioAtualId);
 
-                        <div className="flex items-center gap-3">
-                          <p className="font-black text-slate-900 text-xs whitespace-nowrap">
-                            R$ {Number(item.preco).toFixed(2)}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={(e) => deletarItem(item.id, e)}
-                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
-                            title="Excluir Item"
-                          >
-                            🗑️
-                          </button>
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-200"
+                        >
+                          <div className="pr-2">
+                            <p className="font-bold text-slate-800 text-xs">{item.produto}</p>
+                            <div className="flex gap-1 items-center mt-0.5">
+                              <span className="text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200 inline-block">
+                                ⏳ {calcularTempoRestante(item.createdAt)}
+                              </span>
+                              {item.usuario?.nome && (
+                                <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                  Por: {item.usuario.nome}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <p className="font-black text-slate-900 text-xs whitespace-nowrap">
+                              R$ {Number(item.preco).toFixed(2)}
+                            </p>
+                            {/* Permite exclusão apenas se for o autor do escaneamento */}
+                            {donoDoItem && (
+                              <button
+                                type="button"
+                                onClick={(e) => deletarItem(item.id, e)}
+                                className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                title="Excluir Meu Item Escaneado"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </details>
               ))}

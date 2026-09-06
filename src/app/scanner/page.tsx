@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function LeitorFolhetoPage() {
-  const [mercado, setMercado] = useState('Assaí');
+  const [mercado, setMercado] = useState('ASSAÍ');
   const [regiao, setRegiao] = useState('SUDESTE');
   const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -48,12 +48,12 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Função essencial: Redimensiona e comprime a imagem para não estourar o limite do servidor
+  // Redimensiona e comprime a imagem para otimização do servidor
   const comprimirEGuardarImagem = (source: HTMLVideoElement | HTMLImageElement) => {
     const canvas = canvasRef.current || document.createElement('canvas');
     const ctx = canvas.getContext('2d');
 
-    const maxWidth = 1024; // Define uma largura máxima razoável
+    const maxWidth = 1024;
     const width = 'videoWidth' in source ? source.videoWidth : source.width;
     const height = 'videoHeight' in source ? source.videoHeight : source.height;
 
@@ -63,7 +63,6 @@ export default function LeitorFolhetoPage() {
 
     if (ctx) {
       ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-      // Salva como JPEG com 60% de qualidade para reduzir drasticamente o tamanho (Base64 menor)
       const base64Comprimido = canvas.toDataURL('image/jpeg', 0.6);
       setImagemBase64(base64Comprimido);
     }
@@ -103,24 +102,25 @@ export default function LeitorFolhetoPage() {
     setMensagem('Analisando ofertas com a IA e salvando no banco...');
 
     try {
-      // ✅ ROTA CORRIGIDA AQUI: Chamando a API de processamento do folheto
       const res = await fetch('/api/scan-folheto', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ imagemBase64, mercado, regiao }),
+        body: JSON.stringify({
+          imagemBase64,
+          mercado: mercado.trim().toUpperCase(),
+          regiao,
+        }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.success) {
         setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
-        // Limpa a imagem para o próximo scanner
         setImagemBase64(null);
       } else {
-        // Exibe a mensagem de erro específica retornada pela API
         setMensagem(`❌ ${data.error || 'Falha ao processar imagem.'}`);
       }
     } catch (err: any) {
@@ -140,24 +140,29 @@ export default function LeitorFolhetoPage() {
           </h1>
         </header>
 
+        {/* Card com contraste fortalecido para leitura em smartphones */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Mercado</label>
+            <label className="block text-xs font-black text-slate-900 mb-1 tracking-wide">
+              MERCADO
+            </label>
             <input
               type="text"
               value={mercado}
-              onChange={(e) => setMercado(e.target.value)}
-              placeholder="Ex: Assaí, Carrefour, Atacadão..."
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              onChange={(e) => setMercado(e.target.value.toUpperCase())}
+              placeholder="EX: ASSAÍ, CARREFOUR, ATACADÃO..."
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Região do Folheto</label>
+            <label className="block text-xs font-black text-slate-900 mb-1 tracking-wide">
+              REGIÃO DO FOLHETO
+            </label>
             <select
               value={regiao}
               onChange={(e) => setRegiao(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer"
             >
               <option value="SUDESTE">SUDESTE</option>
               <option value="SUL">SUL</option>
@@ -202,7 +207,6 @@ export default function LeitorFolhetoPage() {
                   type="button"
                   onClick={handleEnviar}
                   disabled={carregando}
-                  // Força type="button" para evitar submit acidental de forms
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50 active:scale-95 transition-all"
                 >
                   {carregando ? 'Processando...' : 'Analisar & Salvar'}
@@ -255,7 +259,7 @@ export default function LeitorFolhetoPage() {
         </div>
 
         {mensagem && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
+          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-900 shadow-sm">
             {mensagem}
           </div>
         )}
@@ -265,11 +269,11 @@ export default function LeitorFolhetoPage() {
         <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold">
           <span>📋</span> Listas
         </Link>
-        <Link href="/scanner" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span>📷</span> Comparar
+        <Link href="/comparar" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
+          <span>📷</span> Folheto/Gondola
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold">
-          <span>📜</span> Histórico
+          <span>📊</span> Comparação/Histórico
         </Link>
       </nav>
     </div>

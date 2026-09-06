@@ -25,6 +25,9 @@ export default function ListasPage() {
   const [carregando, setCarregando] = useState(true);
   const [criandoLista, setCriandoLista] = useState(false);
 
+  // Estado para armazenar os itens checados { itemId: true/false }
+  const [checados, setChecados] = useState<Record<string, boolean>>({});
+
   const carregarListas = async (selecionarId?: string) => {
     try {
       const token = localStorage.getItem('token');
@@ -52,6 +55,32 @@ export default function ListasPage() {
   useEffect(() => {
     carregarListas();
   }, []);
+
+  // Carrega e salva os itens checados no localStorage por lista
+  useEffect(() => {
+    if (listaAtivaId) {
+      const checadosSalvos = localStorage.getItem(`checados_${listaAtivaId}`);
+      if (checadosSalvos) {
+        try {
+          setChecados(JSON.parse(checadosSalvos));
+        } catch {
+          setChecados({});
+        }
+      } else {
+        setChecados({});
+      }
+    }
+  }, [listaAtivaId]);
+
+  const toggleCheck = (itemId: string) => {
+    setChecados((prev) => {
+      const novoEstado = { ...prev, [itemId]: !prev[itemId] };
+      if (listaAtivaId) {
+        localStorage.setItem(`checados_${listaAtivaId}`, JSON.stringify(novoEstado));
+      }
+      return novoEstado;
+    });
+  };
 
   const listaAtual = listas.find((l) => l.id === listaAtivaId) || listas[0];
 
@@ -147,7 +176,6 @@ export default function ListasPage() {
       if (res.ok) {
         const listaRetornada = await res.json();
 
-        // Se for a clonagem da Lista Dieese ou alteração de ID, sincroniza com os dados reais
         setListas((prevListas) => {
           const index = prevListas.findIndex((l) => l.id === listaAtual.id);
           if (index !== -1) {
@@ -162,7 +190,6 @@ export default function ListasPage() {
           setListaAtivaId(listaRetornada.id);
         }
       } else {
-        // Se falhou no backend, restaura a tela como estava
         setListas(estadoAnterior);
       }
     } catch (err) {
@@ -195,6 +222,10 @@ export default function ListasPage() {
       console.error('Erro ao deletar lista:', err);
     }
   };
+
+  // Cálculo de progresso de itens checados na lista ativa
+  const totalItens = listaAtual?.itens?.length || 0;
+  const concluidosCount = listaAtual?.itens?.filter((i) => checados[i.id]).length || 0;
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
@@ -300,7 +331,7 @@ export default function ListasPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                  {listaAtual.itens?.length || 0} itens
+                  {concluidosCount} de {totalItens} comprados
                 </span>
                 {listaAtual.usuarioId !== null && (
                   <button
@@ -323,15 +354,36 @@ export default function ListasPage() {
               <div className="divide-y divide-slate-100 space-y-1">
                 {listaAtual.itens.map((item, index) => {
                   const nome = item.nome || item.produto || 'Item sem nome';
+                  const isChecked = !!checados[item.id];
+
                   return (
                     <div
                       key={item.id || index}
-                      className="pt-2 flex justify-between items-center text-xs text-slate-700"
+                      className={`pt-2 pb-1 flex justify-between items-center text-xs transition-colors ${
+                        isChecked ? 'opacity-50' : ''
+                      }`}
                     >
-                      <span className="font-semibold text-slate-800 flex-1">
-                        {index + 1}. {nome}
-                      </span>
+                      {/* Checkbox e Nome do Item */}
+                      <div className="flex items-center gap-2 flex-1 mr-2">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleCheck(item.id)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                        />
+                        <span
+                          onClick={() => toggleCheck(item.id)}
+                          className={`font-semibold cursor-pointer select-none ${
+                            isChecked
+                              ? 'line-through text-slate-400'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          {index + 1}. {nome}
+                        </span>
+                      </div>
 
+                      {/* Controle de Quantidades e Exclusão */}
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
@@ -362,7 +414,11 @@ export default function ListasPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleAcaoItem(undefined, 'DELETE_ITEM', { itemId: item.id })}
+                          onClick={() =>
+                            handleAcaoItem(undefined, 'DELETE_ITEM', {
+                              itemId: item.id,
+                            })
+                          }
                           className="text-slate-400 hover:text-red-600 font-bold ml-1 text-xs p-1"
                           title="Remover Item"
                         >

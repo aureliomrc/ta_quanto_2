@@ -4,15 +4,17 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 interface ItemEscaneado {
+  id: string;
   produto: string;
-  quantidade: number;
-  precoUnitario: number;
+  preco: number;
+  mercado: string;
+  createdAt: string;
 }
 
-interface EscaneamentoUnico {
-  id: string;
+interface GrupoEscaneamento {
+  idSessao: string;
   data: string;
-  regiao: string;
+  mercado: string;
   total: number;
   itens: ItemEscaneado[];
 }
@@ -48,12 +50,13 @@ export default function HistoricoPage() {
   const [regiaoSelecionada, setRegiaoSelecionada] = useState('SUDESTE');
   const [listas, setListas] = useState<ListaUsuario[]>([]);
   const [listaSelecionadaId, setListaSelecionadaId] = useState<string>('');
-  const [historico, setHistorico] = useState<EscaneamentoUnico[]>([]);
+  const [historico, setHistorico] = useState<GrupoEscaneamento[]>([]);
+  const [ofertasBrutas, setOfertasBrutas] = useState<ItemEscaneado[]>([]);
   const [cotacaoMercados, setCotacaoMercados] = useState<CotacaoMercado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
 
-  // Helper para padronizar os itens da lista independente da estrutura de nomes vinda do Prisma/Backend
+  // Padronizador de itens da lista do usuário
   const extrairItensDaLista = (lista: ListaUsuario | undefined): ItemListaPadronizado[] => {
     if (!lista) return [];
     const itensBrutos = lista.itens || lista.items || lista.ItemLista || [];
@@ -74,7 +77,7 @@ export default function HistoricoPage() {
     return formatados;
   };
 
-  // 1. Carrega todas as listas salvas do usuário
+  // 1. Carrega as listas do usuário
   useEffect(() => {
     const carregarListas = async () => {
       try {
@@ -99,127 +102,154 @@ export default function HistoricoPage() {
     carregarListas();
   }, []);
 
-  // 2. Busca o histórico de escaneamentos e realiza a comparação completa com a lista selecionada
-  useEffect(() => {
-    const carregarDados = async () => {
-      setCarregando(true);
-      try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`/api/historico?regiao=${regiaoSelecionada}`, {
-          headers: { Authorization: `Bearer ${token}` },
+  // 2. Carrega histórico de escaneamentos da região
+  const carregarDados = async () => {
+    setCarregando(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/historico?regiao=${regiaoSelecionada}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const rawData = await res.json();
+        const ofertas: ItemEscaneado[] = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
+        setOfertasBrutas(ofertas);
+
+        // Agrupa escaneamentos por sessão (data/hora/mercado)
+        const mapaGrupos: { [chave: string]: GrupoEscaneamento } = {};
+
+        ofertas.forEach((item, index) => {
+          const dataObjeto = item.createdAt ? new Date(item.createdAt) : new Date();
+          const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
+          const chaveGrupo = `${item.mercado || 'Mercado'}_${dataObjeto.getFullYear()}-${dataObjeto.getMonth()}-${dataObjeto.getDate()}_${dataObjeto.getHours()}:${dataObjeto.getMinutes()}`;
+
+          if (!mapaGrupos[chaveGrupo]) {
+            mapaGrupos[chaveGrupo] = {
+              idSessao: chaveGrupo,
+              data: dataFormatada,
+              mercado: item.mercado || 'Mercado',
+              total: 0,
+              itens: [],
+            };
+          }
+
+          const precoNum = Number(item.preco || 0);
+          mapaGrupos[chaveGrupo].itens.push(item);
+          mapaGrupos[chaveGrupo].total += precoNum;
         });
 
-        if (res.ok) {
-          const rawData = await res.json();
-          const ofertasOuHistorico = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
-
-          // Agrupa as ofertas por lote/sessão de escaneamento
-          const mapaHistorico: { [chave: string]: EscaneamentoUnico } = {};
-
-          ofertasOuHistorico.forEach((item: any, index: number) => {
-            const dataFormatada = item.createdAt
-              ? new Date(item.createdAt).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-              : `Leitura #${index + 1}`;
-
-            const idChave = item.createdAt ? new Date(item.createdAt).toISOString() : `id_${index}`;
-
-            if (!mapaHistorico[idChave]) {
-              mapaHistorico[idChave] = {
-                id: idChave,
-                data: dataFormatada,
-                regiao: item.regiao || regiaoSelecionada,
-                total: 0,
-                itens: [],
-              };
-            }
-
-            const preco = Number(item.preco || item.precoUnitario || 0);
-            const qtd = Number(item.quantidade || 1);
-
-            mapaHistorico[idChave].itens.push({
-              produto: item.produto || 'Produto sem nome',
-              quantidade: qtd,
-              precoUnitario: preco,
-            });
-
-            mapaHistorico[idChave].total += preco * qtd;
-          });
-
-          setHistorico(Object.values(mapaHistorico));
-
-          // 3. Obtém e padroniza os itens da lista escolhida pelo usuário
-          const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
-          const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
-
-          const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
-
-          const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
-            let totalMercado = 0;
-            let usaMediaSefaz = false;
-            const detProdutos: ItemDetalhamentoCotacao[] = [];
-
-            // Percorre TODOS os itens contidos na lista
-            itensDaListaEscolhida.forEach((itemLista) => {
-              const nomeItem = itemLista.produto.trim().toLowerCase();
-              const qtd = itemLista.quantidade || 1;
-
-              // Procura se o produto foi escaneado no mercado
-              const itemEncontrado = ofertasOuHistorico.find(
-                (o: any) =>
-                  o.produto &&
-                  o.produto.toLowerCase().includes(nomeItem) &&
-                  o.mercado &&
-                  o.mercado.toLowerCase().includes(mercadoNome.toLowerCase())
-              );
-
-              if (itemEncontrado && itemEncontrado.preco) {
-                const pUnit = Number(itemEncontrado.preco);
-                totalMercado += pUnit * qtd;
-                detProdutos.push({
-                  produto: itemLista.produto,
-                  quantidade: qtd,
-                  precoUnitario: pUnit,
-                  isSefaz: false,
-                });
-              } else {
-                // Preço SEFAZ simulado caso o item não esteja no banco
-                const mediaSefazEstimada = 15.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
-                totalMercado += mediaSefazEstimada * qtd;
-                usaMediaSefaz = true;
-                detProdutos.push({
-                  produto: itemLista.produto,
-                  quantidade: qtd,
-                  precoUnitario: mediaSefazEstimada,
-                  isSefaz: true,
-                });
-              }
-            });
-
-            return {
-              nome: mercadoNome,
-              total: totalMercado,
-              itensComparados: detProdutos,
-              usaMediaSefaz,
-            };
-          });
-
-          setCotacaoMercados(cotacaoCalculada);
-        }
-      } catch (err) {
-        console.error('Erro no cálculo de cotação:', err);
-      } finally {
-        setCarregando(false);
+        setHistorico(Object.values(mapaGrupos));
       }
-    };
+    } catch (err) {
+      console.error('Erro ao buscar histórico:', err);
+    } finally {
+      setCarregando(false);
+    }
+  };
 
+  useEffect(() => {
     carregarDados();
-  }, [regiaoSelecionada, listaSelecionadaId, listas]);
+  }, [regiaoSelecionada]);
+
+  // 3. Processa Cotação nos Mercados comparando com a Lista Selecionada
+  useEffect(() => {
+    const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
+    const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
+    const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
+
+    const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
+      let totalMercado = 0;
+      let usaMediaSefaz = false;
+      const detProdutos: ItemDetalhamentoCotacao[] = [];
+
+      itensDaListaEscolhida.forEach((itemLista) => {
+        const nomeItem = itemLista.produto.trim().toLowerCase();
+        const qtd = itemLista.quantidade || 1;
+
+        const itemEncontrado = ofertasBrutas.find(
+          (o: any) =>
+            o.produto &&
+            o.produto.toLowerCase().includes(nomeItem) &&
+            o.mercado &&
+            o.mercado.toLowerCase().includes(mercadoNome.toLowerCase())
+        );
+
+        if (itemEncontrado && itemEncontrado.preco) {
+          const pUnit = Number(itemEncontrado.preco);
+          totalMercado += pUnit * qtd;
+          detProdutos.push({
+            produto: itemLista.produto,
+            quantidade: qtd,
+            precoUnitario: pUnit,
+            isSefaz: false,
+          });
+        } else {
+          const mediaSefazEstimada = 15.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
+          totalMercado += mediaSefazEstimada * qtd;
+          usaMediaSefaz = true;
+          detProdutos.push({
+            produto: itemLista.produto,
+            quantidade: qtd,
+            precoUnitario: mediaSefazEstimada,
+            isSefaz: true,
+          });
+        }
+      });
+
+      return {
+        nome: mercadoNome,
+        total: totalMercado,
+        itensComparados: detProdutos,
+        usaMediaSefaz,
+      };
+    });
+
+    setCotacaoMercados(cotacaoCalculada);
+  }, [listaSelecionadaId, listas, ofertasBrutas]);
+
+  // Função de exclusão de item escaneado
+  const deletarItem = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Deseja excluir este item escaneado?')) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/historico?id=${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        carregarDados();
+      } else {
+        alert('Falha ao excluir item.');
+      }
+    } catch (err) {
+      console.error('Erro ao deletar:', err);
+    }
+  };
+
+  // Cálculo das 72h restantes
+  const calcularTempoRestante = (createdAtStr?: string) => {
+    if (!createdAtStr) return 'Válido por 72h';
+    const criadoEm = new Date(createdAtStr).getTime();
+    const expiraEm = criadoEm + 72 * 60 * 60 * 1000;
+    const agora = new Date().getTime();
+    const diferencaMs = expiraEm - agora;
+
+    if (diferencaMs <= 0) return 'Expirado';
+
+    const horasRestantes = Math.floor(diferencaMs / (1000 * 60 * 60));
+    return `Expira em ${horasRestantes}h`;
+  };
 
   const menorPrecoTotal = Math.min(...cotacaoMercados.map((m) => m.total));
 
@@ -247,7 +277,7 @@ export default function HistoricoPage() {
           </select>
         </header>
 
-        {/* SELEÇÃO DA LISTA DO USUÁRIO */}
+        {/* SELEÇÃO DA LISTA DE COMPRAS */}
         <section className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
             Lista Selecionada para Comparação:
@@ -258,7 +288,7 @@ export default function HistoricoPage() {
             className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-emerald-500"
           >
             {listas.length === 0 ? (
-              <option value="">Nenhuma lista (Usando lista modelo)</option>
+              <option value="">Nenhuma lista cadastrada</option>
             ) : (
               listas.map((lista) => (
                 <option key={lista.id} value={lista.id}>
@@ -269,7 +299,7 @@ export default function HistoricoPage() {
           </select>
         </section>
 
-        {/* COMPARATIVO NOS MERCADOS DA REGIÃO */}
+        {/* COTAÇÃO NOS 3 MERCADOS */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Comparativo nos Mercados ({regiaoSelecionada})
@@ -307,7 +337,7 @@ export default function HistoricoPage() {
             })}
           </div>
 
-          {/* DETALHAMENTO DE PRODUTOS COMPAREDOS AO ABRIR O CARD DO MERCADO */}
+          {/* DETALHES DOS PRODUTOS DA COTAÇÃO */}
           {mercadoAberto && (
             <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -358,38 +388,40 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO DE LEITURA */}
+        {/* HISTÓRICO DE ESCANEAMENTOS EM CASCATA COM EXCLUSÃO E 72H */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-            Histórico Único de Leitura
+            Histórico de Escaneamentos (Válidos por até 72h)
           </p>
 
           {carregando ? (
             <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico...</p>
           ) : historico.length === 0 ? (
             <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs">
-              Nenhum escaneamento localizado.
+              Nenhum produto escaneado na região {regiaoSelecionada}.
             </div>
           ) : (
             <div className="space-y-2">
-              {historico.map((entry) => (
+              {historico.map((grupo) => (
                 <details
-                  key={entry.id}
+                  key={grupo.idSessao}
                   className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm group transition-all"
                 >
                   <summary className="p-3.5 font-bold text-xs cursor-pointer flex justify-between items-center bg-white hover:bg-slate-50 select-none">
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-xs">🧾</span>
                       <div>
-                        <p className="font-black text-slate-800 text-xs">{entry.data}</p>
+                        <p className="font-black text-slate-800 text-xs">
+                          {grupo.mercado} - <span className="text-slate-500">{grupo.data}</span>
+                        </p>
                         <p className="text-[10px] text-slate-400 font-medium">
-                          {entry.itens?.length || 0} produto(s)
+                          {grupo.itens.length} produto(s) escaneado(s)
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-black text-emerald-700 text-xs">
-                        R$ {entry.total?.toFixed(2)}
+                        R$ {grupo.total.toFixed(2)}
                       </span>
                       <span className="text-slate-400 text-[10px] group-open:rotate-180 transition-transform">
                         ▼
@@ -397,20 +429,32 @@ export default function HistoricoPage() {
                     </div>
                   </summary>
 
+                  {/* ITENS EM CASCATA */}
                   <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-1.5">
-                    {entry.itens?.map((item, iIdx) => (
+                    {grupo.itens.map((item) => (
                       <div
-                        key={iIdx}
-                        className="flex justify-between items-center text-xs bg-white p-2 rounded-xl border border-slate-200"
+                        key={item.id}
+                        className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-200"
                       >
-                        <div>
+                        <div className="pr-2">
                           <p className="font-bold text-slate-800 text-xs">{item.produto}</p>
-                          <p className="text-[9px] text-slate-400">Qtd: {item.quantidade}x</p>
+                          <span className="text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-0.5">
+                            ⏳ {calcularTempoRestante(item.createdAt)}
+                          </span>
                         </div>
-                        <div className="text-right">
-                          <p className="font-black text-slate-900 text-xs">
-                            R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
+
+                        <div className="flex items-center gap-3">
+                          <p className="font-black text-slate-900 text-xs whitespace-nowrap">
+                            R$ {Number(item.preco).toFixed(2)}
                           </p>
+                          <button
+                            type="button"
+                            onClick={(e) => deletarItem(item.id, e)}
+                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                            title="Excluir Item"
+                          >
+                            🗑️
+                          </button>
                         </div>
                       </div>
                     ))}

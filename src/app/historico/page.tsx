@@ -7,7 +7,7 @@ interface ItemEscaneado {
   produto: string;
   quantidade: number;
   precoUnitario: number;
-  mediaSefaz?: number;
+  mediaSefaz?: boolean;
 }
 
 interface EscaneamentoUnico {
@@ -16,6 +16,12 @@ interface EscaneamentoUnico {
   regiao: string;
   total: number;
   itens: ItemEscaneado[];
+}
+
+interface ListaUsuario {
+  id: string;
+  nome: string;
+  itens: { produto: string; quantidade: number }[];
 }
 
 interface CotacaoMercado {
@@ -27,12 +33,41 @@ interface CotacaoMercado {
 
 export default function HistoricoPage() {
   const [regiaoSelecionada, setRegiaoSelecionada] = useState('SUDESTE');
+  const [listas, setListas] = useState<ListaUsuario[]>([]);
+  const [listaSelecionadaId, setListaSelecionadaId] = useState<string>('');
   const [historico, setHistorico] = useState<EscaneamentoUnico[]>([]);
   const [cotacaoMercados, setCotacaoMercados] = useState<CotacaoMercado[]>([]);
   const [carregando, setCarregando] = useState(true);
 
+  // 1. Carrega as listas do usuário para a seleção na comparação
+  useEffect(() => {
+    const carregarListas = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/listas', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const arrayListas = Array.isArray(data) ? data : data.listas || [];
+          setListas(arrayListas);
+          if (arrayListas.length > 0) {
+            setListaSelecionadaId(arrayListas[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar listas do usuário:', err);
+      }
+    };
+
+    carregarListas();
+  }, []);
+
+  // 2. Busca o histórico de escaneamentos e processa a cotação com a lista escolhida
   useEffect(() => {
     const carregarDados = async () => {
+      setCarregando(true);
       try {
         const token = localStorage.getItem('token');
         const res = await fetch(`/api/historico?regiao=${regiaoSelecionada}`, {
@@ -40,34 +75,85 @@ export default function HistoricoPage() {
         });
 
         if (res.ok) {
-          const data = await res.json();
-          const lista: EscaneamentoUnico[] = Array.isArray(data) ? data : data.historico || [];
-          setHistorico(lista);
+          const rawData = await res.json();
+          const ofertasOuHistorico = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
 
-          // Cálculo das ofertas dos 3 principais mercados da região com fallback para Média SEFAZ
+          // Agrupa ofertas salvas por data/sessão de escaneamento
+          const mapaHistorico: { [chave: string]: EscaneamentoUnico } = {};
+
+          ofertasOuHistorico.forEach((item: any, index: number) => {
+            const dataFormatada = item.createdAt
+              ? new Date(item.createdAt).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : `Leitura #${index + 1}`;
+
+            const idChave = item.createdAt ? new Date(item.createdAt).toISOString() : `id_${index}`;
+
+            if (!mapaHistorico[idChave]) {
+              mapaHistorico[idChave] = {
+                id: idChave,
+                data: dataFormatada,
+                regiao: item.regiao || regiaoSelecionada,
+                total: 0,
+                itens: [],
+              };
+            }
+
+            const preco = Number(item.preco || item.precoUnitario || 0);
+            const qtd = Number(item.quantidade || 1);
+
+            mapaHistorico[idChave].itens.push({
+              produto: item.produto || 'Produto sem nome',
+              quantidade: qtd,
+              precoUnitario: preco,
+            });
+
+            mapaHistorico[idChave].total += preco * qtd;
+          });
+
+          const listaFinalHistorico = Object.values(mapaHistorico);
+          setHistorico(listaFinalHistorico);
+
+          // 3. Monta a Cotação dos 3 Mercados com base na Lista Selecionada do Usuário
           const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
-          
-          const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, index) => {
-            let total = 0;
-            let usaMediaSefaz = false;
-            let itensComparados = 0;
+          const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
+          const itensDaLista = listaAtual?.itens || [
+            { produto: 'Arroz 5kg', quantidade: 1 },
+            { produto: 'Feijão 1kg', quantidade: 2 },
+            { produto: 'Óleo de Soja', quantidade: 1 },
+          ];
 
-            lista.forEach((scanned) => {
-              scanned.itens.forEach((item) => {
-                itensComparados++;
-                // Se o produto não foi escaneado no mercado específico, aplica a média SEFAZ
-                const precoAplicado = item.precoUnitario > 0 ? item.precoUnitario : (item.mediaSefaz || 12.50);
-                if (!item.precoUnitario) usaMediaSefaz = true;
-                
-                const fatorMercado = index === 0 ? 0.95 : index === 1 ? 1.02 : 0.98;
-                total += precoAplicado * item.quantidade * fatorMercado;
-              });
+          const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
+            let totalMercado = 0;
+            let usaMediaSefaz = false;
+
+            itensDaLista.forEach((itemLista) => {
+              // Procura se o produto já foi escaneado no banco de ofertas
+              const itemEncontrado = ofertasOuHistorico.find(
+                (o: any) =>
+                  o.produto?.toLowerCase().includes(itemLista.produto.toLowerCase()) &&
+                  o.mercado?.toLowerCase() === mercadoNome.toLowerCase()
+              );
+
+              if (itemEncontrado && itemEncontrado.preco) {
+                totalMercado += Number(itemEncontrado.preco) * itemLista.quantidade;
+              } else {
+                // Caso não tenha sido escaneado, aplica a Média SEFAZ
+                const mediaSefazEstimada = 14.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
+                totalMercado += mediaSefazEstimada * itemLista.quantidade;
+                usaMediaSefaz = true;
+              }
             });
 
             return {
               nome: mercadoNome,
-              total: total > 0 ? total : (index + 1) * 45.90,
-              itensComparados,
+              total: totalMercado,
+              itensComparados: itensDaLista.length,
               usaMediaSefaz,
             };
           });
@@ -75,21 +161,21 @@ export default function HistoricoPage() {
           setCotacaoMercados(cotacaoCalculada);
         }
       } catch (err) {
-        console.error('Erro ao buscar histórico:', err);
+        console.error('Erro ao buscar dados do histórico:', err);
       } finally {
         setCarregando(false);
       }
     };
 
     carregarDados();
-  }, [regiaoSelecionada]);
+  }, [regiaoSelecionada, listaSelecionadaId, listas]);
 
   const menorPrecoTotal = Math.min(...cotacaoMercados.map((m) => m.total));
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* CABEÇALHO COM SELEÇÃO DE REGIÃO */}
+        {/* CABEÇALHO */}
         <header className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-2xl">📊</span>
@@ -110,15 +196,37 @@ export default function HistoricoPage() {
           </select>
         </header>
 
-        {/* CARDS COMPARATIVOS DOS 3 MERCADOS DA REGIÃO */}
+        {/* SELEÇÃO DA LISTA DO USUÁRIO */}
+        <section className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+            Escolha a Lista para Comparar:
+          </label>
+          <select
+            value={listaSelecionadaId}
+            onChange={(e) => setListaSelecionadaId(e.target.value)}
+            className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-emerald-500"
+          >
+            {listas.length === 0 ? (
+              <option value="">Nenhuma lista cadastrada (Usando lista padrão)</option>
+            ) : (
+              listas.map((lista) => (
+                <option key={lista.id} value={lista.id}>
+                  📋 {lista.nome} ({lista.itens?.length || 0} itens)
+                </option>
+              ))
+            )}
+          </select>
+        </section>
+
+        {/* COMPARATIVO DOS 3 MERCADOS */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-            Comparativo Regional ({regiaoSelecionada})
+            Comparativo nos 3 Mercados ({regiaoSelecionada})
           </p>
 
           <div className="grid grid-cols-3 gap-2">
             {cotacaoMercados.map((m, idx) => {
-              const eOMaisBarato = m.total === menorPrecoTotal;
+              const eOMaisBarato = m.total === menorPrecoTotal && m.total > 0;
               return (
                 <div
                   key={idx}
@@ -150,17 +258,17 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO ÚNICO COM EFEITO CASCATA */}
+        {/* HISTÓRICO ÚNICO DE LEITURA */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Histórico Único de Leitura
           </p>
 
           {carregando ? (
-            <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando dados...</p>
+            <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico...</p>
           ) : historico.length === 0 ? (
             <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs">
-              Nenhum escaneamento localizado para a região {regiaoSelecionada}.
+              Nenhum escaneamento localizado.
             </div>
           ) : (
             <div className="space-y-2">
@@ -206,11 +314,6 @@ export default function HistoricoPage() {
                           <p className="font-black text-slate-900 text-xs">
                             R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
                           </p>
-                          {item.mediaSefaz && !item.precoUnitario && (
-                            <span className="text-[8px] bg-slate-100 text-slate-500 font-bold px-1 py-0.5 rounded">
-                              Média SEFAZ
-                            </span>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -222,7 +325,7 @@ export default function HistoricoPage() {
         </section>
       </div>
 
-      {/* RODAPÉ DE NAVEGAÇÃO */}
+      {/* RODAPÉ */}
       <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
         <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
           <span className="text-base">📋</span> Listas

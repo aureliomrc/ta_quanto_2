@@ -266,7 +266,7 @@ export default function CompararPage() {
           <span className="text-base">📋</span> Listas
         </Link>
         <Link href="/comparar" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span className="text-base">📷</span> Cotação
+          <span className="text-base">📷</span> Folheto/Gondola
         </Link>
         <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
           <span className="text-base">📊</span> Comparação/Histórico

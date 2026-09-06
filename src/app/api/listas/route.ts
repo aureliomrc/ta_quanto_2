@@ -5,17 +5,17 @@ import jwt from 'jsonwebtoken';
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 const ITENS_DIEESE = [
-  'Arroz (3kg)',
-  'Feijão (4,5kg)',
-  'Carne Bovino (6kg)',
-  'Leite Integral (7,5L)',
-  'Pão Francês (6kg)',
-  'Mandioca/Batata (6kg)',
-  'Tomate (9kg)',
-  'Óleo de Soja (1 lata/refil)',
-  'Café em Pó (600g)',
-  'Açúcar Refinado (3kg)',
-  'Banana (9 dúzias)',
+  'Arroz (1kg)',
+  'Feijão (1kg)',
+  'Carne Bovina (1kg)',
+  'Leite Integral (1L)',
+  'Pão Francês (1kg)',
+  'Mandioca (1kg)',
+  'Tomate (1kg)',
+  'Óleo de Soja (900ml)',
+  'Café em Pó (500g)',
+  'Açúcar Refinado (1kg)',
+  'Banana (1 dúzias)',
   'Manteiga (750g)',
   'Sabão em Pó (1kg)',
   'Detergente Líquido (500ml)',
@@ -157,7 +157,7 @@ export async function PUT(req: Request) {
       // Cria a nova versão da lista pertencente ao usuário
       const novaListaUsuario = await prismaAny.lista.create({
         data: {
-          nome: 'Lista Dieese (Minha Versão)',
+          nome: 'Lista Dieese',
           usuarioId,
           itens: {
             create: itensExistentes,

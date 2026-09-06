@@ -17,10 +17,17 @@ interface EscaneamentoUnico {
   itens: ItemEscaneado[];
 }
 
+interface ItemListaPadronizado {
+  produto: string;
+  quantidade: number;
+}
+
 interface ListaUsuario {
   id: string;
   nome: string;
-  itens: { produto: string; quantidade: number }[];
+  itens?: any[];
+  items?: any[];
+  ItemLista?: any[];
 }
 
 interface ItemDetalhamentoCotacao {
@@ -45,6 +52,27 @@ export default function HistoricoPage() {
   const [cotacaoMercados, setCotacaoMercados] = useState<CotacaoMercado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
+
+  // Helper para padronizar os itens da lista independente da estrutura de nomes vinda do Prisma/Backend
+  const extrairItensDaLista = (lista: ListaUsuario | undefined): ItemListaPadronizado[] => {
+    if (!lista) return [];
+    const itensBrutos = lista.itens || lista.items || lista.ItemLista || [];
+
+    const formatados = itensBrutos.map((it: any) => ({
+      produto: String(it.produto || it.nome || it.nomeProduto || 'Item sem nome'),
+      quantidade: Number(it.quantidade || it.qtd || 1),
+    }));
+
+    if (formatados.length === 0) {
+      return [
+        { produto: 'Arroz 5kg', quantidade: 1 },
+        { produto: 'Feijão 1kg', quantidade: 2 },
+        { produto: 'Óleo de Soja', quantidade: 1 },
+      ];
+    }
+
+    return formatados;
+  };
 
   // 1. Carrega todas as listas salvas do usuário
   useEffect(() => {
@@ -85,7 +113,7 @@ export default function HistoricoPage() {
           const rawData = await res.json();
           const ofertasOuHistorico = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
 
-          // Agrupa as ofertas por lote de escaneamento
+          // Agrupa as ofertas por lote/sessão de escaneamento
           const mapaHistorico: { [chave: string]: EscaneamentoUnico } = {};
 
           ofertasOuHistorico.forEach((item: any, index: number) => {
@@ -125,9 +153,9 @@ export default function HistoricoPage() {
 
           setHistorico(Object.values(mapaHistorico));
 
-          // 3. Pega os itens da lista que o usuário escolheu
+          // 3. Obtém e padroniza os itens da lista escolhida pelo usuário
           const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
-          const itensDaListaEscolhida = listaAtual?.itens || [];
+          const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
 
           const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
 
@@ -136,12 +164,12 @@ export default function HistoricoPage() {
             let usaMediaSefaz = false;
             const detProdutos: ItemDetalhamentoCotacao[] = [];
 
-            // Percorre TODOS os itens contidos na lista do usuário
+            // Percorre TODOS os itens contidos na lista
             itensDaListaEscolhida.forEach((itemLista) => {
               const nomeItem = itemLista.produto.trim().toLowerCase();
               const qtd = itemLista.quantidade || 1;
 
-              // Tenta localizar no banco de dados o produto escaneado correspondente no mercado
+              // Procura se o produto foi escaneado no mercado
               const itemEncontrado = ofertasOuHistorico.find(
                 (o: any) =>
                   o.produto &&
@@ -151,7 +179,6 @@ export default function HistoricoPage() {
               );
 
               if (itemEncontrado && itemEncontrado.preco) {
-                // Se encontrou no scanner, usa o Preço Real registrado
                 const pUnit = Number(itemEncontrado.preco);
                 totalMercado += pUnit * qtd;
                 detProdutos.push({
@@ -161,8 +188,8 @@ export default function HistoricoPage() {
                   isSefaz: false,
                 });
               } else {
-                // Se não encontrou, aplica o valor da Média SEFAZ
-                const mediaSefazEstimada = 12.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
+                // Preço SEFAZ simulado caso o item não esteja no banco
+                const mediaSefazEstimada = 15.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
                 totalMercado += mediaSefazEstimada * qtd;
                 usaMediaSefaz = true;
                 detProdutos.push({
@@ -231,11 +258,11 @@ export default function HistoricoPage() {
             className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-emerald-500"
           >
             {listas.length === 0 ? (
-              <option value="">Nenhuma lista cadastrada</option>
+              <option value="">Nenhuma lista (Usando lista modelo)</option>
             ) : (
               listas.map((lista) => (
                 <option key={lista.id} value={lista.id}>
-                  📋 {lista.nome} ({lista.itens?.length || 0} itens)
+                  📋 {lista.nome} ({extrairItensDaLista(lista).length} itens)
                 </option>
               ))
             )}
@@ -285,7 +312,7 @@ export default function HistoricoPage() {
             <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                 <p className="text-xs font-black text-slate-800">
-                  🛒 Todos os itens da lista em <span className="text-emerald-600">{mercadoAberto}</span>:
+                  🛒 Itens da lista cotados em <span className="text-emerald-600">{mercadoAberto}</span>:
                 </p>
                 <button
                   type="button"
@@ -318,7 +345,7 @@ export default function HistoricoPage() {
                           </span>
                         ) : (
                           <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">
-                            Preço Real Escaneado
+                            Preço Escaneado
                           </span>
                         )}
                       </div>

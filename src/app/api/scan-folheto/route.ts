@@ -27,23 +27,44 @@ const model = genAI.getGenerativeModel({
   model: 'gemini-3.6-flash',
   generationConfig: {
     temperature: 0.0,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 2048, // Aumentado para não cortar strings longas no meio
     responseMimeType: 'application/json',
     responseSchema: responseSchema,
   },
 });
 
-function extrairJSONRapido(texto: string): any[] {
+// Função resiliente para sanitizar e reparar JSON truncado
+function extrairJSONRobusto(texto: string): any[] {
   let limpo = texto.trim();
+
+  // Remove blocos de código Markdown
   if (limpo.startsWith('```')) {
     limpo = limpo.replace(/^```(json)?\s*/, '').replace(/\s*```$/, '');
   }
+
   const p = limpo.indexOf('[');
   const u = limpo.lastIndexOf(']');
+
   if (p !== -1 && u !== -1) {
     limpo = limpo.substring(p, u + 1);
   }
-  return JSON.parse(limpo);
+
+  // Primeira tentativa de parse padrão
+  try {
+    return JSON.parse(limpo);
+  } catch (err) {
+    // Se o JSON foi cortado no meio de um objeto/string, recupera os itens anteriores válidos
+    const ultimoObjetoFechado = limpo.lastIndexOf('}');
+    if (p !== -1 && ultimoObjetoFechado > p) {
+      const jsonRecuperado = limpo.substring(p, ultimoObjetoFechado + 1) + ']';
+      try {
+        return JSON.parse(jsonRecuperado);
+      } catch (innerErr) {
+        throw new Error('Não foi possível ler a estrutura de ofertas da imagem.');
+      }
+    }
+    throw err;
+  }
 }
 
 export async function POST(req: Request) {
@@ -78,9 +99,9 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // Call ao Gemini mantida otimizada
+    // Requisição rápida ao Gemini
     const result = await model.generateContent([
-      `Extraia ate 15 produtos e precos visiveis no folheto do mercado "${mercado}".`,
+      `Extraia ate 15 produtos e precos visiveis no folheto do mercado "${mercado}". Evite usar aspas dentro do nome do produto.`,
       {
         inlineData: {
           data: cleanBase64,
@@ -90,9 +111,9 @@ export async function POST(req: Request) {
     ]);
 
     const responseText = result.response.text();
-    const ofertasExtraidas = extrairJSONRapido(responseText);
+    const ofertasExtraidas = extrairJSONRobusto(responseText);
 
-    // Gravação garantida no Prisma usando await
+    // Gravação síncrona no Prisma com filtro de integridade
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
       const regiaoFormatada = String(regiao).replace(/-/g, '_').toUpperCase() as Regiao;
       const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
@@ -100,7 +121,7 @@ export async function POST(req: Request) {
       const ofertasParaInserir = ofertasExtraidas
         .filter((item: any) => item && item.produto && !isNaN(Number(item.preco)))
         .map((item: any) => ({
-          produto: String(item.produto).trim(),
+          produto: String(item.produto).replace(/"/g, '').trim(),
           preco: Number(item.preco),
           mercado: String(mercado).trim(),
           regiao: regiaoFormatada,
@@ -115,7 +136,7 @@ export async function POST(req: Request) {
             data: ofertasParaInserir,
           });
         } catch (dbErr: any) {
-          console.error('Erro ao salvar ofertas no Prisma:', dbErr);
+          console.error('Erro ao salvar no Prisma:', dbErr);
         }
       }
     }

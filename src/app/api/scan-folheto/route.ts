@@ -64,11 +64,11 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 5. Chamada para a API Gemini (Atualizado para gemini-3.6-flash)
+    // 5. Chamada Direta com gemini-3.6-flash
     let ofertasExtraidas: any[] = [];
     try {
       const model = genAI.getGenerativeModel({
-        model: 'gemini-3.6-flash', // ✅ Modelo atualizado
+        model: 'gemini-3.6-flash',
         generationConfig: {
           temperature: 0.0,
           maxOutputTokens: 1000,
@@ -101,7 +101,6 @@ export async function POST(req: Request) {
 
     // 6. Salvando no Banco de Dados via Prisma
     if (Array.isArray(ofertasExtraidas) && ofertasExtraidas.length > 0) {
-      // Formata a região para garantir padrão Enum do Prisma (ex: CENTRO-OESTE -> CENTRO_OESTE)
       const regiaoFormatada = regiao.replace(/-/g, '_').toUpperCase();
       const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 

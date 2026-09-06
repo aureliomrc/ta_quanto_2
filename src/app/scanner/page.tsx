@@ -48,7 +48,6 @@ export default function LeitorFolhetoPage() {
     }
   };
 
-  // Redimensiona e comprime a imagem para otimização do servidor
   const comprimirEGuardarImagem = (source: HTMLVideoElement | HTMLImageElement) => {
     const canvas = canvasRef.current || document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -131,7 +130,7 @@ export default function LeitorFolhetoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
+    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans text-slate-900">
       <div className="space-y-4">
         <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
           <span className="text-2xl">📷</span>
@@ -140,36 +139,43 @@ export default function LeitorFolhetoPage() {
           </h1>
         </header>
 
-        {/* Card com contraste fortalecido para leitura em smartphones */}
+        {/* Card adaptado com resets do sistema operacional do celular */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
           <div>
-            <label className="block text-xs font-black text-slate-900 mb-1 tracking-wide">
-              MERCADO
+            <label className="block text-xs font-black text-slate-800 mb-1 tracking-wide uppercase">
+              Mercado
             </label>
             <input
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value.toUpperCase())}
               placeholder="EX: ASSAÍ, CARREFOUR, ATACADÃO..."
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              style={{ WebkitTextFillColor: '#0f172a', opacity: 1 }}
+              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-black text-slate-900 mb-1 tracking-wide">
-              REGIÃO DO FOLHETO
+            <label className="block text-xs font-black text-slate-800 mb-1 tracking-wide uppercase">
+              Região do Folheto
             </label>
-            <select
-              value={regiao}
-              onChange={(e) => setRegiao(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer"
-            >
-              <option value="SUDESTE">SUDESTE</option>
-              <option value="SUL">SUL</option>
-              <option value="NORDESTE">NORDESTE</option>
-              <option value="CENTRO_OESTE">CENTRO-OESTE</option>
-              <option value="NORTE">NORTE</option>
-            </select>
+            <div className="relative">
+              <select
+                value={regiao}
+                onChange={(e) => setRegiao(e.target.value)}
+                style={{ WebkitTextFillColor: '#0f172a', opacity: 1 }}
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none shadow-inner"
+              >
+                <option value="SUDESTE" className="text-slate-900 bg-white">SUDESTE</option>
+                <option value="SUL" className="text-slate-900 bg-white">SUL</option>
+                <option value="NORDESTE" className="text-slate-900 bg-white">NORDESTE</option>
+                <option value="CENTRO_OESTE" className="text-slate-900 bg-white">CENTRO-OESTE</option>
+                <option value="NORTE" className="text-slate-900 bg-white">NORTE</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-700 font-bold text-xs">
+                ▼
+              </div>
+            </div>
           </div>
         </div>
 
@@ -181,7 +187,6 @@ export default function LeitorFolhetoPage() {
           className="hidden"
         />
 
-        {/* Canvas escondido para auxiliar na compressão de imagem */}
         <canvas ref={canvasRef} className="hidden" />
 
         <div className="bg-black rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800 relative overflow-hidden">
@@ -259,7 +264,7 @@ export default function LeitorFolhetoPage() {
         </div>
 
         {mensagem && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-900 shadow-sm">
+          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-black text-slate-900 shadow-sm">
             {mensagem}
           </div>
         )}

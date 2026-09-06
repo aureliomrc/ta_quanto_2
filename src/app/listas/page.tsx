@@ -47,7 +47,7 @@ export default function ListasPage() {
       }
     } catch (err) {
       console.error('Erro ao buscar listas:', err);
-    } font
+    } finally {
       setCarregando(false);
     }
   };
@@ -89,7 +89,6 @@ export default function ListasPage() {
     e.preventDefault();
     if (!novaListaNome.trim()) return;
 
-    // Converte o nome da lista para MAIÚSCULAS
     const nomeEmMaiusculo = novaListaNome.trim().toUpperCase();
 
     try {
@@ -123,11 +122,9 @@ export default function ListasPage() {
     if (e) e.preventDefault();
     if (!listaAtual) return;
 
-    // Converte o nome do item para MAIÚSCULAS
     const itemTexto = (payload.nomeItem || novoItemNome).trim().toUpperCase();
     if (acao === 'ADD_ITEM' && !itemTexto) return;
 
-    // Guarda o estado anterior caso precise reverter
     const estadoAnterior = [...listas];
 
     // 1. ATUALIZAÇÃO OTIMISTA INSTANTÂNEA NA INTERFACE

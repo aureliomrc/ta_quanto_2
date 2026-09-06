@@ -57,6 +57,50 @@ export default function HistoricoPage() {
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
 
+  // Helper para estimar preço SEFAZ realista baseado na categoria e peso/volume do produto
+  const estimarPrecoSefazInteligente = (nomeProduto: string, mercadoIndex: number): number => {
+    const nome = nomeProduto.toLowerCase();
+    let precoBase = 12.00; // Valor padrão genérico
+
+    // 1. Identificação por palavra-chave da categoria
+    if (nome.includes('carne') || nome.includes('bovino') || nome.includes('picanha') || nome.includes('alcatra')) {
+      precoBase = 38.90;
+    } else if (nome.includes('arroz')) {
+      precoBase = 6.20;
+    } else if (nome.includes('feijão') || nome.includes('feijao')) {
+      precoBase = 7.80;
+    } else if (nome.includes('leite')) {
+      precoBase = 4.90;
+    } else if (nome.includes('óleo') || nome.includes('oleo')) {
+      precoBase = 6.90;
+    } else if (nome.includes('café') || nome.includes('cafe')) {
+      precoBase = 16.50;
+    } else if (nome.includes('açúcar') || nome.includes('acucar')) {
+      precoBase = 4.50;
+    } else if (nome.includes('frango') || nome.includes('peito')) {
+      precoBase = 18.90;
+    }
+
+    // 2. Extração de multiplicador de peso ou volume (ex: "3kg", "4,5kg", "7.5L")
+    const regexPeso = /(\d+([.,]\d+)?)\s*(kg|l|g|ml)/i;
+    const match = nome.match(regexPeso);
+
+    if (match && match[1]) {
+      const quantidadeUnidade = parseFloat(match[1].replace(',', '.'));
+      const unidade = match[3].toLowerCase();
+
+      if (unidade === 'kg' || unidade === 'l') {
+        precoBase = precoBase * quantidadeUnidade;
+      } else if (unidade === 'g' || unidade === 'ml') {
+        precoBase = precoBase * (quantidadeUnidade / 1000);
+      }
+    }
+
+    // 3. Aplica pequena variação por mercado (Assaí, Carrefour, Atacadão)
+    const variacaoMercado = mercadoIndex === 0 ? 0.96 : mercadoIndex === 1 ? 1.03 : 0.98;
+    return Number((precoBase * variacaoMercado).toFixed(2));
+  };
+
   // Padronizador dos itens da lista do usuário
   const extrairItensDaLista = (lista: ListaUsuario | undefined): ItemListaPadronizado[] => {
     if (!lista) return [];
@@ -69,16 +113,17 @@ export default function HistoricoPage() {
 
     if (formatados.length === 0) {
       return [
-        { produto: 'Arroz 5kg', quantidade: 1 },
-        { produto: 'Feijão 1kg', quantidade: 2 },
-        { produto: 'Óleo de Soja', quantidade: 1 },
+        { produto: 'Arroz (3kg)', quantidade: 1 },
+        { produto: 'Feijão (4,5kg)', quantidade: 1 },
+        { produto: 'Carne Bovino (6kg)', quantidade: 1 },
+        { produto: 'Leite Integral (7.5L)', quantidade: 1 },
       ];
     }
 
     return formatados;
   };
 
-  // 1. Carrega as listas de compras do usuário
+  // Carrega as listas do usuário
   useEffect(() => {
     const carregarListas = async () => {
       try {
@@ -103,7 +148,7 @@ export default function HistoricoPage() {
     carregarListas();
   }, []);
 
-  // 2. Busca e filtra estritamente os dados do Histórico e Ofertas da Região Selecionada
+  // Busca e filtra estritamente os dados do Histórico e Ofertas da Região Selecionada
   const carregarDadosDaRegiao = async () => {
     setCarregando(true);
     try {
@@ -116,14 +161,12 @@ export default function HistoricoPage() {
         const rawData = await res.json();
         const ofertasBrutas: ItemEscaneado[] = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
 
-        // Filtro estrito por região (garante isolamento)
         const ofertasFiltradas = ofertasBrutas.filter(
           (o) => !o.regiao || o.regiao.toUpperCase() === regiaoSelecionada.toUpperCase()
         );
 
         setOfertasRegiao(ofertasFiltradas);
 
-        // Agrupa o histórico da região em lotes de escaneamento
         const mapaGrupos: { [chave: string]: GrupoEscaneamento } = {};
 
         ofertasFiltradas.forEach((item) => {
@@ -166,7 +209,7 @@ export default function HistoricoPage() {
     carregarDadosDaRegiao();
   }, [regiaoSelecionada]);
 
-  // 3. Recalcula a cotação usando APENAS escaneamentos pertencentes à Região Escolhida
+  // Recalcula a cotação usando escaneamentos ou a nova Média SEFAZ Inteligente
   useEffect(() => {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
@@ -181,7 +224,6 @@ export default function HistoricoPage() {
         const nomeItem = itemLista.produto.trim().toLowerCase();
         const qtd = itemLista.quantidade || 1;
 
-        // Procura ofertas exclusivamente na lista da região atual
         const itemEncontrado = ofertasRegiao.find(
           (o) =>
             o.produto &&
@@ -200,14 +242,14 @@ export default function HistoricoPage() {
             isSefaz: false,
           });
         } else {
-          // Se não há escaneamento para o produto nesta região, aplica Média SEFAZ
-          const mediaSefazEstimada = 15.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
-          totalMercado += mediaSefazEstimada * qtd;
+          // Preço SEFAZ Calculado com base no nome/medida do produto
+          const mediaSefazCalculada = estimarPrecoSefazInteligente(itemLista.produto, idx);
+          totalMercado += mediaSefazCalculada * qtd;
           usaMediaSefaz = true;
           detProdutos.push({
             produto: itemLista.produto,
             quantidade: qtd,
-            precoUnitario: mediaSefazEstimada,
+            precoUnitario: mediaSefazCalculada,
             isSefaz: true,
           });
         }
@@ -224,7 +266,6 @@ export default function HistoricoPage() {
     setCotacaoMercados(cotacaoCalculada);
   }, [listaSelecionadaId, listas, ofertasRegiao]);
 
-  // Função de exclusão de produto escaneado
   const deletarItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Deseja excluir este produto do histórico desta região?')) return;
@@ -246,7 +287,6 @@ export default function HistoricoPage() {
     }
   };
 
-  // Função para expiração (72 Horas)
   const calcularTempoRestante = (createdAtStr?: string) => {
     if (!createdAtStr) return 'Válido por 72h';
     const criadoEm = new Date(createdAtStr).getTime();
@@ -265,7 +305,7 @@ export default function HistoricoPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* CABEÇALHO COM MUDANÇA DE REGIÃO */}
+        {/* CABEÇALHO */}
         <header className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-2xl">📊</span>
@@ -308,7 +348,7 @@ export default function HistoricoPage() {
           </select>
         </section>
 
-        {/* COTAÇÃO NOS MERCADOS (REATIVA À REGIÃO SELECIONADA) */}
+        {/* COTAÇÃO NOS MERCADOS */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Comparativo nos Mercados ({regiaoSelecionada})
@@ -346,7 +386,7 @@ export default function HistoricoPage() {
             })}
           </div>
 
-          {/* DETALHAMENTO EXPANSÍVEL DOS PRODUTOS */}
+          {/* DETALHAMENTO EXPANSÍVEL */}
           {mercadoAberto && (
             <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -397,7 +437,7 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO ISOLADO DA REGIÃO SELECIONADA */}
+        {/* HISTÓRICO ISOLADO DA REGIÃO */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Histórico da Região: <span className="text-emerald-600 font-bold">{regiaoSelecionada}</span> (Até 72h)
@@ -438,7 +478,6 @@ export default function HistoricoPage() {
                     </div>
                   </summary>
 
-                  {/* PRODUTOS ESCANEADOS NA REGIÃO */}
                   <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-1.5">
                     {grupo.itens.map((item) => (
                       <div

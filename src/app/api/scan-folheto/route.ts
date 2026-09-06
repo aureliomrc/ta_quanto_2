@@ -26,6 +26,40 @@ const responseSchema: ResponseSchema = {
 // Função auxiliar para aguardar um determinado número de milissegundos
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Função auxiliar para sanitizar, extrair e reparar JSONs truncados ou com Markdown
+function extrairETratarJSON(texto: string): any[] {
+  let limpo = texto.trim();
+
+  // 1. Remove blocos de código Markdown se houver
+  if (limpo.startsWith('```json')) {
+    limpo = limpo.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  } else if (limpo.startsWith('```')) {
+    limpo = limpo.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  }
+
+  // 2. Garante que pegamos apenas o array de produtos [...]
+  const primeiroColchete = limpo.indexOf('[');
+  const ultimoColchete = limpo.lastIndexOf(']');
+
+  if (primeiroColchete !== -1 && ultimoColchete !== -1) {
+    limpo = limpo.substring(primeiroColchete, ultimoColchete + 1);
+  }
+
+  try {
+    return JSON.parse(limpo);
+  } catch (err) {
+    // 3. Tenta recuperar o JSON se a resposta foi cortada no final
+    if (!limpo.endsWith(']')) {
+      const indiceUltimoObjetoFechado = limpo.lastIndexOf('}');
+      if (indiceUltimoObjetoFechado !== -1) {
+        const jsonReparado = limpo.substring(0, indiceUltimoObjetoFechado + 1) + ']';
+        return JSON.parse(jsonReparado);
+      }
+    }
+    throw err;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     // 1. Validação de Autenticação JWT
@@ -67,22 +101,23 @@ export async function POST(req: Request) {
       cleanBase64 = parts[1];
     }
 
-    // 5. Chamada com Retry (Tentativas Automáticas para tratar erros 503 / 429)
+    // 5. Chamada com Retry e Limpeza de Payload JSON
     let ofertasExtraidas: any[] = [];
     const maxTentativas = 3;
     let ultimoErro: any = null;
 
+    // Utilizando um modelo estável com suporte multimodal (gemini-2.5-flash ou gemini-1.5-flash)
     const model = genAI.getGenerativeModel({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-1.5-flash',
       generationConfig: {
-        temperature: 0.0,
-        maxOutputTokens: 1000,
+        temperature: 0.1,
+        maxOutputTokens: 2048, // Aumentado para 2048 para evitar truncamento de lista no meio
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       },
     });
 
-    const prompt = `Liste até 15 produtos e preços visíveis na foto do folheto do mercado "${mercado}".`;
+    const prompt = `Analise o folheto do mercado "${mercado}". Liste até 15 produtos e preços visíveis na imagem.`;
 
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       try {
@@ -97,26 +132,30 @@ export async function POST(req: Request) {
         ]);
 
         const responseText = result.response.text();
-        ofertasExtraidas = JSON.parse(responseText);
+        
+        // Tratamento e limpeza segura do JSON antes do JSON.parse
+        ofertasExtraidas = extrairETratarJSON(responseText);
 
-        // Se chegou até aqui, a chamada foi um sucesso! Interrompe o loop de tentativas.
+        // Se chegou até aqui com sucesso, interrompe o loop
         ultimoErro = null;
         break;
       } catch (geminiErr: any) {
         ultimoErro = geminiErr;
         const msg = geminiErr?.message || '';
-        const eErroTemporario = msg.includes('503') || msg.includes('429') || msg.includes('Service Unavailable') || msg.includes('high demand');
+        const eErroTemporario = 
+          msg.includes('503') || 
+          msg.includes('429') || 
+          msg.includes('Service Unavailable') || 
+          msg.includes('high demand') ||
+          msg.includes('JSON');
 
         console.warn(`[Gemini Try ${tentativa}/${maxTentativas}] Falha ao processar: ${msg}`);
 
-        // Se for erro temporário de alta demanda (503) ou rate limit (429) e ainda houver tentativas restante:
         if (eErroTemporario && tentativa < maxTentativas) {
-          // Aguarda um tempo progressivo (Ex: 2s na 1ª falha, 4s na 2ª falha) antes de tentar novamente
           const tempoEspera = tentativa * 2000;
           console.log(`Aguardando ${tempoEspera / 1000}s para tentar novamente...`);
           await delay(tempoEspera);
         } else if (!eErroTemporario) {
-          // Se for outro erro (ex: sintaxe ou chave inválida), não adianta tentar novamente
           break;
         }
       }
@@ -126,7 +165,7 @@ export async function POST(req: Request) {
     if (ultimoErro) {
       console.error('Erro Final no Gemini após tentativas:', ultimoErro);
       return NextResponse.json(
-        { error: `Erro na análise do Gemini: ${ultimoErro.message || 'O serviço do Gemini está temporariamente indisponível. Tente novamente em instantes.'}` },
+        { error: `Erro na análise do Gemini: Não foi possível processar o folheto. Tente uma foto mais nítida.` },
         { status: 500 }
       );
     }

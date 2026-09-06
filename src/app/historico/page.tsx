@@ -8,6 +8,7 @@ interface ItemEscaneado {
   produto: string;
   preco: number;
   mercado: string;
+  regiao?: string;
   createdAt: string;
 }
 
@@ -51,12 +52,12 @@ export default function HistoricoPage() {
   const [listas, setListas] = useState<ListaUsuario[]>([]);
   const [listaSelecionadaId, setListaSelecionadaId] = useState<string>('');
   const [historico, setHistorico] = useState<GrupoEscaneamento[]>([]);
-  const [ofertasBrutas, setOfertasBrutas] = useState<ItemEscaneado[]>([]);
+  const [ofertasRegiao, setOfertasRegiao] = useState<ItemEscaneado[]>([]);
   const [cotacaoMercados, setCotacaoMercados] = useState<CotacaoMercado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
 
-  // Padronizador de itens da lista do usuário
+  // Padronizador dos itens da lista do usuário
   const extrairItensDaLista = (lista: ListaUsuario | undefined): ItemListaPadronizado[] => {
     if (!lista) return [];
     const itensBrutos = lista.itens || lista.items || lista.ItemLista || [];
@@ -77,7 +78,7 @@ export default function HistoricoPage() {
     return formatados;
   };
 
-  // 1. Carrega as listas do usuário
+  // 1. Carrega as listas de compras do usuário
   useEffect(() => {
     const carregarListas = async () => {
       try {
@@ -95,15 +96,15 @@ export default function HistoricoPage() {
           }
         }
       } catch (err) {
-        console.error('Erro ao carregar listas do usuário:', err);
+        console.error('Erro ao carregar listas:', err);
       }
     };
 
     carregarListas();
   }, []);
 
-  // 2. Carrega histórico de escaneamentos da região
-  const carregarDados = async () => {
+  // 2. Busca e filtra estritamente os dados do Histórico e Ofertas da Região Selecionada
+  const carregarDadosDaRegiao = async () => {
     setCarregando(true);
     try {
       const token = localStorage.getItem('token');
@@ -113,13 +114,19 @@ export default function HistoricoPage() {
 
       if (res.ok) {
         const rawData = await res.json();
-        const ofertas: ItemEscaneado[] = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
-        setOfertasBrutas(ofertas);
+        const ofertasBrutas: ItemEscaneado[] = Array.isArray(rawData) ? rawData : rawData.historico || rawData.ofertas || [];
 
-        // Agrupa escaneamentos por sessão (data/hora/mercado)
+        // Filtro estrito por região (garante isolamento)
+        const ofertasFiltradas = ofertasBrutas.filter(
+          (o) => !o.regiao || o.regiao.toUpperCase() === regiaoSelecionada.toUpperCase()
+        );
+
+        setOfertasRegiao(ofertasFiltradas);
+
+        // Agrupa o histórico da região em lotes de escaneamento
         const mapaGrupos: { [chave: string]: GrupoEscaneamento } = {};
 
-        ofertas.forEach((item, index) => {
+        ofertasFiltradas.forEach((item) => {
           const dataObjeto = item.createdAt ? new Date(item.createdAt) : new Date();
           const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {
             day: '2-digit',
@@ -149,17 +156,17 @@ export default function HistoricoPage() {
         setHistorico(Object.values(mapaGrupos));
       }
     } catch (err) {
-      console.error('Erro ao buscar histórico:', err);
+      console.error('Erro ao buscar dados da região:', err);
     } finally {
       setCarregando(false);
     }
   };
 
   useEffect(() => {
-    carregarDados();
+    carregarDadosDaRegiao();
   }, [regiaoSelecionada]);
 
-  // 3. Processa Cotação nos Mercados comparando com a Lista Selecionada
+  // 3. Recalcula a cotação usando APENAS escaneamentos pertencentes à Região Escolhida
   useEffect(() => {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
@@ -174,8 +181,9 @@ export default function HistoricoPage() {
         const nomeItem = itemLista.produto.trim().toLowerCase();
         const qtd = itemLista.quantidade || 1;
 
-        const itemEncontrado = ofertasBrutas.find(
-          (o: any) =>
+        // Procura ofertas exclusivamente na lista da região atual
+        const itemEncontrado = ofertasRegiao.find(
+          (o) =>
             o.produto &&
             o.produto.toLowerCase().includes(nomeItem) &&
             o.mercado &&
@@ -192,6 +200,7 @@ export default function HistoricoPage() {
             isSefaz: false,
           });
         } else {
+          // Se não há escaneamento para o produto nesta região, aplica Média SEFAZ
           const mediaSefazEstimada = 15.90 * (idx === 0 ? 0.95 : idx === 1 ? 1.02 : 0.98);
           totalMercado += mediaSefazEstimada * qtd;
           usaMediaSefaz = true;
@@ -213,12 +222,12 @@ export default function HistoricoPage() {
     });
 
     setCotacaoMercados(cotacaoCalculada);
-  }, [listaSelecionadaId, listas, ofertasBrutas]);
+  }, [listaSelecionadaId, listas, ofertasRegiao]);
 
-  // Função de exclusão de item escaneado
+  // Função de exclusão de produto escaneado
   const deletarItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Deseja excluir este item escaneado?')) return;
+    if (!confirm('Deseja excluir este produto do histórico desta região?')) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -228,16 +237,16 @@ export default function HistoricoPage() {
       });
 
       if (res.ok) {
-        carregarDados();
+        carregarDadosDaRegiao();
       } else {
         alert('Falha ao excluir item.');
       }
     } catch (err) {
-      console.error('Erro ao deletar:', err);
+      console.error('Erro ao excluir:', err);
     }
   };
 
-  // Cálculo das 72h restantes
+  // Função para expiração (72 Horas)
   const calcularTempoRestante = (createdAtStr?: string) => {
     if (!createdAtStr) return 'Válido por 72h';
     const criadoEm = new Date(createdAtStr).getTime();
@@ -256,7 +265,7 @@ export default function HistoricoPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
       <div className="space-y-4">
-        {/* CABEÇALHO */}
+        {/* CABEÇALHO COM MUDANÇA DE REGIÃO */}
         <header className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <span className="text-2xl">📊</span>
@@ -267,7 +276,7 @@ export default function HistoricoPage() {
           <select
             value={regiaoSelecionada}
             onChange={(e) => setRegiaoSelecionada(e.target.value)}
-            className="border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold bg-white focus:ring-2 focus:ring-emerald-500"
+            className="border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold bg-white focus:ring-2 focus:ring-emerald-500 shadow-sm"
           >
             <option value="SUDESTE">SUDESTE</option>
             <option value="SUL">SUL</option>
@@ -299,7 +308,7 @@ export default function HistoricoPage() {
           </select>
         </section>
 
-        {/* COTAÇÃO NOS 3 MERCADOS */}
+        {/* COTAÇÃO NOS MERCADOS (REATIVA À REGIÃO SELECIONADA) */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
             Comparativo nos Mercados ({regiaoSelecionada})
@@ -337,12 +346,12 @@ export default function HistoricoPage() {
             })}
           </div>
 
-          {/* DETALHES DOS PRODUTOS DA COTAÇÃO */}
+          {/* DETALHAMENTO EXPANSÍVEL DOS PRODUTOS */}
           {mercadoAberto && (
             <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                 <p className="text-xs font-black text-slate-800">
-                  🛒 Itens da lista cotados em <span className="text-emerald-600">{mercadoAberto}</span>:
+                  🛒 Itens da lista em <span className="text-emerald-600">{mercadoAberto}</span> ({regiaoSelecionada}):
                 </p>
                 <button
                   type="button"
@@ -375,7 +384,7 @@ export default function HistoricoPage() {
                           </span>
                         ) : (
                           <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">
-                            Preço Escaneado
+                            Escaneado na Região
                           </span>
                         )}
                       </div>
@@ -388,17 +397,17 @@ export default function HistoricoPage() {
 
         <hr className="border-slate-200" />
 
-        {/* HISTÓRICO DE ESCANEAMENTOS EM CASCATA COM EXCLUSÃO E 72H */}
+        {/* HISTÓRICO ISOLADO DA REGIÃO SELECIONADA */}
         <section className="space-y-2">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-            Histórico de Escaneamentos (Válidos por até 72h)
+            Histórico da Região: <span className="text-emerald-600 font-bold">{regiaoSelecionada}</span> (Até 72h)
           </p>
 
           {carregando ? (
             <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico...</p>
           ) : historico.length === 0 ? (
             <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs">
-              Nenhum produto escaneado na região {regiaoSelecionada}.
+              Nenhum produto escaneado na região <strong className="text-slate-600">{regiaoSelecionada}</strong>.
             </div>
           ) : (
             <div className="space-y-2">
@@ -429,7 +438,7 @@ export default function HistoricoPage() {
                     </div>
                   </summary>
 
-                  {/* ITENS EM CASCATA */}
+                  {/* PRODUTOS ESCANEADOS NA REGIÃO */}
                   <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-1.5">
                     {grupo.itens.map((item) => (
                       <div

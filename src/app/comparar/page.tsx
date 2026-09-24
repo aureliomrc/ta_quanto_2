@@ -31,16 +31,14 @@ export default function CompararPage() {
   const iniciarWebcam = async () => {
     try {
       setMensagem('');
-      // Ativa stream com restrições compatíveis para Desktop e Mobile
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
-      
+
       streamRef.current = stream;
       setStreamAtivo(true);
 
-      // Aguarda a renderização do elemento <video> no DOM
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -132,42 +130,57 @@ export default function CompararPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
+    <main
+      className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-28 font-sans text-slate-900"
+      style={{ colorScheme: 'light' }}
+    >
       <div className="space-y-4">
-        <header className="flex items-center gap-2 border-b border-slate-200 pb-3">
-          <span className="text-2xl">📷</span>
-          <h1 className="text-lg font-black text-emerald-700 uppercase tracking-tight">
+        <header className="flex items-center gap-2 border-b-2 border-slate-300 pb-3">
+          <span aria-hidden="true" className="text-2xl">📷</span>
+          <h1 className="text-lg font-black text-emerald-800 uppercase tracking-tight">
             LEITOR DE FOLHETO (IA)
           </h1>
         </header>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3 shadow-sm">
+        {/* Form Dados do Mercado */}
+        <section aria-label="Informações do Mercado" className="bg-white p-4 rounded-2xl border-2 border-slate-300 space-y-3 shadow-sm">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Mercado</label>
+            <label htmlFor="mercado-input" className="block text-xs font-black text-slate-900 mb-1 uppercase">
+              Mercado
+            </label>
             <input
+              id="mercado-input"
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value)}
               placeholder="Ex: Assaí, Carrefour, Atacadão..."
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full border-2 border-slate-400 rounded-xl px-3 py-3 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-700"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Região do Folheto</label>
-            <select
-              value={regiao}
-              onChange={(e) => setRegiao(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="SUDESTE">SUDESTE</option>
-              <option value="SUL">SUL</option>
-              <option value="NORDESTE">NORDESTE</option>
-              <option value="CENTRO_OESTE">CENTRO-OESTE</option>
-              <option value="NORTE">NORTE</option>
-            </select>
+            <label htmlFor="regiao-select" className="block text-xs font-black text-slate-900 mb-1 uppercase">
+              Região do Folheto
+            </label>
+            <div className="relative">
+              <select
+                id="regiao-select"
+                value={regiao}
+                onChange={(e) => setRegiao(e.target.value)}
+                className="w-full border-2 border-slate-400 rounded-xl px-3 py-3 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-700 appearance-none min-h-[48px]"
+              >
+                <option value="SUDESTE">SUDESTE</option>
+                <option value="SUL">SUL</option>
+                <option value="NORDESTE">NORDESTE</option>
+                <option value="CENTRO_OESTE">CENTRO-OESTE</option>
+                <option value="NORTE">NORTE</option>
+              </select>
+              <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 font-bold text-xs text-slate-900">
+                ▼
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
         <input
           type="file"
@@ -175,16 +188,18 @@ export default function CompararPage() {
           ref={inputArquivoRef}
           onChange={handleUploadArquivo}
           className="hidden"
+          aria-hidden="true"
         />
 
-        <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
 
-        <div className="bg-black rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border border-slate-800 relative overflow-hidden">
+        {/* Moldura da Câmera / Imagem */}
+        <section aria-label="Área de Captura do Folheto" className="bg-slate-900 rounded-2xl p-4 flex flex-col items-center justify-center min-h-[260px] shadow-lg border-2 border-slate-800 relative overflow-hidden">
           {imagemBase64 ? (
             <div className="w-full space-y-3 text-center">
               <img
                 src={imagemBase64}
-                alt="Foto Selecionada"
+                alt="Foto do folheto capturada para análise"
                 className="max-h-56 mx-auto rounded-xl object-contain border border-slate-700"
               />
               <div className="flex gap-2">
@@ -194,7 +209,7 @@ export default function CompararPage() {
                     setImagemBase64(null);
                     desligarCamera();
                   }}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl font-bold text-xs"
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white min-h-[48px] rounded-xl font-bold text-xs focus:ring-2 focus:ring-white"
                 >
                   Tirar Outra
                 </button>
@@ -202,7 +217,7 @@ export default function CompararPage() {
                   type="button"
                   onClick={handleEnviar}
                   disabled={carregando}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50 active:scale-95 transition-all"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white min-h-[48px] rounded-xl font-black text-xs disabled:opacity-50 focus:ring-2 focus:ring-emerald-400 active:scale-95 transition-all"
                 >
                   {carregando ? 'Processando...' : 'Analisar & Salvar'}
                 </button>
@@ -215,20 +230,21 @@ export default function CompararPage() {
                 autoPlay
                 playsInline
                 muted
+                aria-label="Câmera em tempo real"
                 className="w-full max-h-56 rounded-xl object-cover border border-slate-700"
               />
               <div className="flex gap-2 w-full">
                 <button
                   type="button"
                   onClick={desligarCamera}
-                  className="flex-1 bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs"
+                  className="flex-1 bg-slate-700 text-white min-h-[48px] rounded-xl font-bold text-xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={capturarFotoVideo}
-                  className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs active:scale-95 transition-all"
+                  className="flex-1 bg-emerald-600 text-white min-h-[48px] rounded-xl font-black text-xs active:scale-95 transition-all"
                 >
                   📸 Capturar Frame
                 </button>
@@ -239,39 +255,48 @@ export default function CompararPage() {
               <button
                 type="button"
                 onClick={iniciarWebcam}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 px-4 rounded-xl text-xs shadow-lg active:scale-95 transition-all"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black min-h-[48px] px-4 rounded-xl text-xs shadow-lg active:scale-95 transition-all focus:ring-2 focus:ring-emerald-400"
               >
                 📹 Ativar Câmera / Webcam
               </button>
               <button
                 type="button"
                 onClick={() => inputArquivoRef.current?.click()}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-3 px-4 rounded-xl text-xs border border-slate-700 active:scale-95 transition-all"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold min-h-[48px] px-4 rounded-xl text-xs border border-slate-700 active:scale-95 transition-all focus:ring-2 focus:ring-white"
               >
                 🖼️ Selecionar Foto / Galeria
               </button>
             </div>
           )}
-        </div>
+        </section>
 
+        {/* Feedback Acessível (Leitor de Tela fala ao mudar) */}
         {mensagem && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center text-xs font-bold text-slate-800 shadow-sm">
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="bg-white p-3 rounded-xl border-2 border-slate-400 text-center text-xs font-black text-slate-900 shadow-md"
+          >
             {mensagem}
           </div>
         )}
       </div>
 
-      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
-        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
-          <span className="text-base">📋</span> Listas
+      {/* Navegação Rodapé Acessível */}
+      <nav aria-label="Navegação principal" className="bg-white border-t-2 border-slate-300 px-4 py-2 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
+        <Link href="/listas" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-slate-700 text-xs font-bold hover:text-emerald-800">
+          <span aria-hidden="true" className="text-lg">📋</span>
+          <span>Listas</span>
         </Link>
-        <Link href="/comparar" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span className="text-base">📷</span> Folheto/Gondola
+        <Link href="/comparar" aria-current="page" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-emerald-800 text-xs font-black">
+          <span aria-hidden="true" className="text-lg">📷</span>
+          <span>Folheto/Gôndola</span>
         </Link>
-        <Link href="/historico" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
-          <span className="text-base">📊</span> Comparação/Histórico
+        <Link href="/historico" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-slate-700 text-xs font-bold hover:text-emerald-800">
+          <span aria-hidden="true" className="text-lg">📊</span>
+          <span>Histórico</span>
         </Link>
       </nav>
-    </div>
+    </main>
   );
 }

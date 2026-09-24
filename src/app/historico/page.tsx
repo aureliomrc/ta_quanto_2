@@ -73,19 +73,19 @@ export default function HistoricoPage() {
   }, []);
 
   /**
-   * Remove acentos, pontuações e converte para maiúsculas para comparação inteligente (Regex Corrigida)
+   * Normaliza textos para comparações inteligentes (remove acentos e caracteres especiais)
    */
   const normalizarTexto = (texto: string = ''): string => {
     return texto
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove acentos (ex: Á -> A)
-      .replace(/[^a-zA-Z0-9\s]/g, '')   // Remove caracteres especiais
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9\s]/g, '')
       .trim()
       .toUpperCase();
   };
 
   /**
-   * Verifica se dois produtos coincidem (ex: "CAFÉ EM PÓ" coincide com "CAFÉ MELLITA 500G")
+   * Compara produtos considerando nomes de marcas ou variações (ex: "CAFÉ EM PÓ" e "CAFÉ MELLITA")
    */
   const compararProdutosInteligente = (nomeLista: string, nomeEscaneado: string): boolean => {
     const listaNorm = normalizarTexto(nomeLista);
@@ -93,12 +93,10 @@ export default function HistoricoPage() {
 
     if (!listaNorm || !escaneadoNorm) return false;
 
-    // 1. Coincidência direta/sub-string
     if (escaneadoNorm.includes(listaNorm) || listaNorm.includes(escaneadoNorm)) {
       return true;
     }
 
-    // 2. Coincidência por palavras-chave principais (ignora palavras curtas/medidas)
     const palavrasIgnoradas = new Set(['DE', 'EM', 'PO', 'PARA', 'KG', 'G', 'L', 'ML', '1KG', '500G']);
     const palavrasLista = listaNorm.split(/\s+/).filter((p) => p.length > 2 && !palavrasIgnoradas.has(p));
 
@@ -206,27 +204,17 @@ export default function HistoricoPage() {
           (o) => !o.regiao || o.regiao.toUpperCase() === regiaoSelecionada.toUpperCase()
         );
 
-        // Mapeador dinâmico de nomes reais para Mercado A, Mercado B, Mercado C...
-        const mapaNomesMercados: Record<string, string> = {};
-        let codigoLetra = 65; // Letra 'A'
+        // Mantém o nome EXATO que o usuário digitou no escaneamento
+        const ofertasComNomeOriginal = ofertasFiltradas.map((item) => ({
+          ...item,
+          mercado: (item.mercado || 'MERCADO').trim().toUpperCase(),
+        }));
 
-        const ofertasComNomesAnonimos = ofertasFiltradas.map((item) => {
-          const nomeOriginal = (item.mercado || 'Mercado').trim().toUpperCase();
-          if (!mapaNomesMercados[nomeOriginal]) {
-            mapaNomesMercados[nomeOriginal] = `Mercado ${String.fromCharCode(codigoLetra)}`;
-            codigoLetra++;
-          }
-          return {
-            ...item,
-            mercado: mapaNomesMercados[nomeOriginal],
-          };
-        });
-
-        setOfertasRegiao(ofertasComNomesAnonimos);
+        setOfertasRegiao(ofertasComNomeOriginal);
 
         const mapaGrupos: { [chave: string]: GrupoEscaneamento } = {};
 
-        ofertasComNomesAnonimos.forEach((item) => {
+        ofertasComNomeOriginal.forEach((item) => {
           const dataObjeto = item.createdAt ? new Date(item.createdAt) : new Date();
           const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {
             day: '2-digit',
@@ -266,13 +254,21 @@ export default function HistoricoPage() {
     carregarDadosDaRegiao();
   }, [regiaoSelecionada]);
 
+  // Monta a cotação com base nos mercados REAIS/DIGITADOS que existem no banco para a região
   useEffect(() => {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
 
-    const mercadosDaRegiao = ['Mercado A', 'Mercado B', 'Mercado C'];
+    // Extrai dinamicamente todos os mercados únicos digitados/cadastrados na região
+    const mercadosUnicosNaRegiao = Array.from(
+      new Set(ofertasRegiao.map((o) => (o.mercado || 'MERCADO').trim().toUpperCase()))
+    );
 
-    const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
+    // Se não houver mercados escaneados ainda, usa uma lista base
+    const mercadosParaExibir =
+      mercadosUnicosNaRegiao.length > 0 ? mercadosUnicosNaRegiao : ['MERCADO A', 'MERCADO B', 'MERCADO C'];
+
+    const cotacaoCalculada: CotacaoMercado[] = mercadosParaExibir.map((mercadoNome, idx) => {
       let totalMercado = 0;
       let usaMediaSefaz = false;
       const detProdutos: ItemDetalhamentoCotacao[] = [];
@@ -280,6 +276,7 @@ export default function HistoricoPage() {
       itensDaListaEscolhida.forEach((itemLista) => {
         const qtd = itemLista.quantidade || 1;
 
+        // Procura se o produto da lista foi escaneado nesse mercado específico
         const itemEncontrado = ofertasRegiao.find(
           (o) =>
             o.produto &&

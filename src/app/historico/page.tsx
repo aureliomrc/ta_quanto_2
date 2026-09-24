@@ -72,30 +72,63 @@ export default function HistoricoPage() {
     }
   }, []);
 
+  /**
+   * Remove acentos, pontuações e converte para maiúsculas para comparação inteligente (Regex Corrigida)
+   */
+  const normalizarTexto = (texto: string = ''): string => {
+    return texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos (ex: Á -> A)
+      .replace(/[^a-zA-Z0-9\s]/g, '')   // Remove caracteres especiais
+      .trim()
+      .toUpperCase();
+  };
+
+  /**
+   * Verifica se dois produtos coincidem (ex: "CAFÉ EM PÓ" coincide com "CAFÉ MELLITA 500G")
+   */
+  const compararProdutosInteligente = (nomeLista: string, nomeEscaneado: string): boolean => {
+    const listaNorm = normalizarTexto(nomeLista);
+    const escaneadoNorm = normalizarTexto(nomeEscaneado);
+
+    if (!listaNorm || !escaneadoNorm) return false;
+
+    // 1. Coincidência direta/sub-string
+    if (escaneadoNorm.includes(listaNorm) || listaNorm.includes(escaneadoNorm)) {
+      return true;
+    }
+
+    // 2. Coincidência por palavras-chave principais (ignora palavras curtas/medidas)
+    const palavrasIgnoradas = new Set(['DE', 'EM', 'PO', 'PARA', 'KG', 'G', 'L', 'ML', '1KG', '500G']);
+    const palavrasLista = listaNorm.split(/\s+/).filter((p) => p.length > 2 && !palavrasIgnoradas.has(p));
+
+    return palavrasLista.some((palavra) => escaneadoNorm.includes(palavra));
+  };
+
   const estimarPrecoSefazInteligente = (nomeProduto: string, mercadoIndex: number): number => {
-    const nome = nomeProduto.toLowerCase();
+    const nome = normalizarTexto(nomeProduto);
     let precoBase = 12.00;
 
-    if (nome.includes('carne') || nome.includes('bovino') || nome.includes('picanha')) {
+    if (nome.includes('CARNE') || nome.includes('BOVINO') || nome.includes('PICANHA')) {
       precoBase = 38.90;
-    } else if (nome.includes('arroz')) {
+    } else if (nome.includes('ARROZ')) {
       precoBase = 6.20;
-    } else if (nome.includes('feijão') || nome.includes('feijao')) {
+    } else if (nome.includes('FEIJAO')) {
       precoBase = 7.80;
-    } else if (nome.includes('leite')) {
+    } else if (nome.includes('LEITE')) {
       precoBase = 4.90;
-    } else if (nome.includes('óleo') || nome.includes('oleo')) {
+    } else if (nome.includes('OLEO')) {
       precoBase = 6.90;
-    } else if (nome.includes('café') || nome.includes('cafe')) {
+    } else if (nome.includes('CAFE')) {
       precoBase = 16.50;
-    } else if (nome.includes('açúcar') || nome.includes('acucar')) {
+    } else if (nome.includes('ACUCAR')) {
       precoBase = 4.50;
-    } else if (nome.includes('frango')) {
+    } else if (nome.includes('FRANGO')) {
       precoBase = 18.90;
     }
 
     const regexPeso = /(\d+([.,]\d+)?)\s*(kg|l|g|ml)/i;
-    const match = nome.match(regexPeso);
+    const match = nomeProduto.match(regexPeso);
 
     if (match && match[1]) {
       const quantidadeUnidade = parseFloat(match[1].replace(',', '.'));
@@ -237,7 +270,6 @@ export default function HistoricoPage() {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
 
-    // Nomes anonimizados dos estabelecimentos para o comparativo
     const mercadosDaRegiao = ['Mercado A', 'Mercado B', 'Mercado C'];
 
     const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
@@ -246,15 +278,14 @@ export default function HistoricoPage() {
       const detProdutos: ItemDetalhamentoCotacao[] = [];
 
       itensDaListaEscolhida.forEach((itemLista) => {
-        const nomeItem = itemLista.produto.trim().toLowerCase();
         const qtd = itemLista.quantidade || 1;
 
         const itemEncontrado = ofertasRegiao.find(
           (o) =>
             o.produto &&
-            o.produto.toLowerCase().includes(nomeItem) &&
+            compararProdutosInteligente(itemLista.produto, o.produto) &&
             o.mercado &&
-            o.mercado.toLowerCase() === mercadoNome.toLowerCase()
+            normalizarTexto(o.mercado) === normalizarTexto(mercadoNome)
         );
 
         if (itemEncontrado && itemEncontrado.preco) {

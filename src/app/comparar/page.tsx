@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function CompararPage() {
-  const [mercado, setMercado] = useState('Assaí');
+  const [mercado, setMercado] = useState('');
   const [regiao, setRegiao] = useState('SUDESTE');
   const [imagemBase64, setImagemBase64] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -154,7 +154,7 @@ export default function CompararPage() {
               type="text"
               value={mercado}
               onChange={(e) => setMercado(e.target.value)}
-              placeholder="Ex: Assaí, Carrefour, Atacadão..."
+              placeholder="Digite o nome do mercado..."
               className="w-full border-2 border-slate-400 rounded-xl px-3 py-3 text-sm font-black text-slate-900 bg-white uppercase focus:outline-none focus:ring-2 focus:ring-emerald-700"
             />
           </div>

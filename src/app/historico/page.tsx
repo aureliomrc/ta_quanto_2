@@ -60,7 +60,6 @@ export default function HistoricoPage() {
   const [mercadoAberto, setMercadoAberto] = useState<string | null>(null);
   const [usuarioAtualId, setUsuarioAtualId] = useState<string>('');
 
-  // Identifica o ID do usuário logado via Token para controlar permissão de exclusão
   useEffect(() => {
     try {
       const token = localStorage.getItem('token');
@@ -73,7 +72,6 @@ export default function HistoricoPage() {
     }
   }, []);
 
-  // Estimativa Inteligente Média SEFAZ
   const estimarPrecoSefazInteligente = (nomeProduto: string, mercadoIndex: number): number => {
     const nome = nomeProduto.toLowerCase();
     let precoBase = 12.00;
@@ -159,7 +157,6 @@ export default function HistoricoPage() {
     carregarListas();
   }, []);
 
-  // Busca GLOBAL de ofertas da região (compartilhadas entre todos os usuários)
   const carregarDadosDaRegiao = async () => {
     setCarregando(true);
     try {
@@ -176,11 +173,27 @@ export default function HistoricoPage() {
           (o) => !o.regiao || o.regiao.toUpperCase() === regiaoSelecionada.toUpperCase()
         );
 
-        setOfertasRegiao(ofertasFiltradas);
+        // Mapeador dinâmico de nomes reais para Mercado A, Mercado B, Mercado C...
+        const mapaNomesMercados: Record<string, string> = {};
+        let codigoLetra = 65; // Letra 'A'
+
+        const ofertasComNomesAnonimos = ofertasFiltradas.map((item) => {
+          const nomeOriginal = (item.mercado || 'Mercado').trim().toUpperCase();
+          if (!mapaNomesMercados[nomeOriginal]) {
+            mapaNomesMercados[nomeOriginal] = `Mercado ${String.fromCharCode(codigoLetra)}`;
+            codigoLetra++;
+          }
+          return {
+            ...item,
+            mercado: mapaNomesMercados[nomeOriginal],
+          };
+        });
+
+        setOfertasRegiao(ofertasComNomesAnonimos);
 
         const mapaGrupos: { [chave: string]: GrupoEscaneamento } = {};
 
-        ofertasFiltradas.forEach((item) => {
+        ofertasComNomesAnonimos.forEach((item) => {
           const dataObjeto = item.createdAt ? new Date(item.createdAt) : new Date();
           const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {
             day: '2-digit',
@@ -190,13 +203,13 @@ export default function HistoricoPage() {
             minute: '2-digit',
           });
 
-          const chaveGrupo = `${item.mercado || 'Mercado'}_${dataObjeto.getFullYear()}-${dataObjeto.getMonth()}-${dataObjeto.getDate()}_${dataObjeto.getHours()}:${dataObjeto.getMinutes()}`;
+          const chaveGrupo = `${item.mercado}_${dataObjeto.getFullYear()}-${dataObjeto.getMonth()}-${dataObjeto.getDate()}_${dataObjeto.getHours()}:${dataObjeto.getMinutes()}`;
 
           if (!mapaGrupos[chaveGrupo]) {
             mapaGrupos[chaveGrupo] = {
               idSessao: chaveGrupo,
               data: dataFormatada,
-              mercado: item.mercado || 'Mercado',
+              mercado: item.mercado,
               total: 0,
               itens: [],
             };
@@ -220,11 +233,12 @@ export default function HistoricoPage() {
     carregarDadosDaRegiao();
   }, [regiaoSelecionada]);
 
-  // Cotação comparativa utilizando as ofertas escaneadas globais da região
   useEffect(() => {
     const listaAtual = listas.find((l) => l.id === listaSelecionadaId);
     const itensDaListaEscolhida = extrairItensDaLista(listaAtual);
-    const mercadosDaRegiao = ['Assaí', 'Carrefour', 'Atacadão'];
+
+    // Nomes anonimizados dos estabelecimentos para o comparativo
+    const mercadosDaRegiao = ['Mercado A', 'Mercado B', 'Mercado C'];
 
     const cotacaoCalculada: CotacaoMercado[] = mercadosDaRegiao.map((mercadoNome, idx) => {
       let totalMercado = 0;
@@ -235,13 +249,12 @@ export default function HistoricoPage() {
         const nomeItem = itemLista.produto.trim().toLowerCase();
         const qtd = itemLista.quantidade || 1;
 
-        // Procura ofertas da comunidade/todos os usuários para aquele mercado na região
         const itemEncontrado = ofertasRegiao.find(
           (o) =>
             o.produto &&
             o.produto.toLowerCase().includes(nomeItem) &&
             o.mercado &&
-            o.mercado.toLowerCase().includes(mercadoNome.toLowerCase())
+            o.mercado.toLowerCase() === mercadoNome.toLowerCase()
         );
 
         if (itemEncontrado && itemEncontrado.preco) {
@@ -314,20 +327,23 @@ export default function HistoricoPage() {
   const menorPrecoTotal = Math.min(...cotacaoMercados.map((m) => m.total));
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-24 font-sans">
+    <main
+      className="min-h-screen bg-slate-100 p-4 max-w-md mx-auto flex flex-col justify-between pb-28 font-sans text-slate-900"
+      style={{ colorScheme: 'light' }}
+    >
       <div className="space-y-4">
         {/* CABEÇALHO */}
-        <header className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <header className="flex items-center justify-between border-b-2 border-slate-300 pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">📊</span>
-            <h1 className="text-md font-black text-emerald-700 uppercase tracking-tight">
+            <span aria-hidden="true" className="text-2xl">📊</span>
+            <h1 className="text-md font-black text-emerald-800 uppercase tracking-tight">
               Cotação & Histórico
             </h1>
           </div>
           <select
             value={regiaoSelecionada}
             onChange={(e) => setRegiaoSelecionada(e.target.value)}
-            className="border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold bg-white focus:ring-2 focus:ring-emerald-500 shadow-sm"
+            className="border-2 border-slate-400 rounded-xl px-2 py-1.5 text-xs font-black bg-white text-slate-900 focus:ring-2 focus:ring-emerald-700 shadow-sm"
           >
             <option value="SUDESTE">SUDESTE</option>
             <option value="SUL">SUL</option>
@@ -338,14 +354,15 @@ export default function HistoricoPage() {
         </header>
 
         {/* SELEÇÃO DA LISTA DE COMPRAS */}
-        <section className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+        <section className="bg-white p-3 rounded-2xl border-2 border-slate-300 shadow-sm space-y-1">
+          <label htmlFor="select-lista-historico" className="text-[10px] font-black text-slate-900 uppercase tracking-wider block">
             Lista Selecionada para Comparação:
           </label>
           <select
+            id="select-lista-historico"
             value={listaSelecionadaId}
             onChange={(e) => setListaSelecionadaId(e.target.value)}
-            className="w-full border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-emerald-500"
+            className="w-full border-2 border-slate-400 rounded-xl p-2.5 text-xs font-black text-slate-900 bg-slate-50 focus:ring-2 focus:ring-emerald-700"
           >
             {listas.length === 0 ? (
               <option value="">Nenhuma lista cadastrada</option>
@@ -361,9 +378,9 @@ export default function HistoricoPage() {
 
         {/* COTAÇÃO NOS MERCADOS */}
         <section className="space-y-2">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+          <h2 className="text-[10px] font-black text-slate-900 uppercase tracking-wider">
             Comparativo nos Mercados ({regiaoSelecionada})
-          </p>
+          </h2>
 
           <div className="grid grid-cols-3 gap-2">
             {cotacaoMercados.map((m, idx) => {
@@ -371,13 +388,14 @@ export default function HistoricoPage() {
               const estaAberto = mercadoAberto === m.nome;
 
               return (
-                <div
+                <button
+                  type="button"
                   key={idx}
                   onClick={() => setMercadoAberto(estaAberto ? null : m.nome)}
-                  className={`p-3 rounded-2xl border text-center flex flex-col justify-between shadow-sm relative cursor-pointer transition-all ${
+                  className={`p-3 rounded-2xl border-2 text-center flex flex-col justify-between shadow-sm relative cursor-pointer transition-all min-h-[88px] ${
                     eOMaisBarato
-                      ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-400'
-                      : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
+                      ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-400'
+                      : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   {eOMaisBarato && (
@@ -385,29 +403,29 @@ export default function HistoricoPage() {
                       Melhor
                     </span>
                   )}
-                  <p className="text-xs font-black truncate">{m.nome}</p>
+                  <p className="text-xs font-black truncate w-full">{m.nome}</p>
                   <p className="text-sm font-black my-1">
                     R$ {m.total.toFixed(2)}
                   </p>
-                  <p className={`text-[8px] font-bold ${eOMaisBarato ? 'text-emerald-100' : 'text-emerald-600'}`}>
+                  <p className={`text-[9px] font-bold ${eOMaisBarato ? 'text-emerald-100' : 'text-emerald-800'}`}>
                     {estaAberto ? '▲ Ocultar' : `🔍 (${m.itensComparados.length}) Itens`}
                   </p>
-                </div>
+                </button>
               );
             })}
           </div>
 
           {/* DETALHAMENTO EXPANSÍVEL */}
           {mercadoAberto && (
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2 mt-2">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <p className="text-xs font-black text-slate-800">
-                  🛒 Itens da lista em <span className="text-emerald-600">{mercadoAberto}</span> ({regiaoSelecionada}):
+            <div className="bg-white p-3 rounded-2xl border-2 border-slate-300 shadow-sm space-y-2 mt-2">
+              <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                <p className="text-xs font-black text-slate-900">
+                  🛒 Itens da lista em <span className="text-emerald-800">{mercadoAberto}</span> ({regiaoSelecionada}):
                 </p>
                 <button
                   type="button"
                   onClick={() => setMercadoAberto(null)}
-                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+                  className="text-[10px] font-black text-slate-600 hover:text-slate-900 p-1"
                 >
                   ✕ Fechar
                 </button>
@@ -419,22 +437,22 @@ export default function HistoricoPage() {
                   ?.itensComparados.map((item, i) => (
                     <div
                       key={i}
-                      className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl border border-slate-100"
+                      className="flex justify-between items-center text-xs p-2.5 bg-slate-50 rounded-xl border border-slate-300"
                     >
                       <div>
-                        <p className="font-bold text-slate-800">{item.produto}</p>
-                        <p className="text-[9px] text-slate-400">Qtd: {item.quantidade}x</p>
+                        <p className="font-black text-slate-900">{item.produto}</p>
+                        <p className="text-[10px] text-slate-600 font-bold">Qtd: {item.quantidade}x</p>
                       </div>
                       <div className="text-right">
                         <p className="font-black text-slate-900">
                           R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
                         </p>
                         {item.isSefaz ? (
-                          <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1 rounded">
+                          <span className="text-[9px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
                             Média SEFAZ
                           </span>
                         ) : (
-                          <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">
+                          <span className="text-[9px] bg-emerald-100 text-emerald-900 font-black px-1.5 py-0.5 rounded border border-emerald-300">
                             Escaneado na Região
                           </span>
                         )}
@@ -446,66 +464,66 @@ export default function HistoricoPage() {
           )}
         </section>
 
-        <hr className="border-slate-200" />
+        <hr className="border-slate-300" />
 
         {/* HISTÓRICO GLOBAL DA REGIÃO */}
         <section className="space-y-2">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+          <h2 className="text-[10px] font-black text-slate-900 uppercase tracking-wider">
             Histórico da Comunidade ({regiaoSelecionada}):
-          </p>
+          </h2>
 
           {carregando ? (
-            <p className="text-xs font-bold text-slate-400 text-center py-6">Carregando histórico público...</p>
+            <p className="text-xs font-black text-slate-600 text-center py-6">Carregando histórico público...</p>
           ) : historico.length === 0 ? (
-            <div className="bg-white p-6 rounded-2xl text-center border border-slate-200 text-slate-400 text-xs">
-              Nenhum produto escaneado na região <strong className="text-slate-600">{regiaoSelecionada}</strong> até o momento.
+            <div className="bg-white p-6 rounded-2xl text-center border-2 border-slate-300 text-slate-600 text-xs font-bold">
+              Nenhum produto escaneado na região <strong className="text-slate-900">{regiaoSelecionada}</strong> até o momento.
             </div>
           ) : (
             <div className="space-y-2">
               {historico.map((grupo) => (
                 <details
                   key={grupo.idSessao}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm group transition-all"
+                  className="bg-white rounded-2xl border-2 border-slate-300 overflow-hidden shadow-sm group transition-all"
                 >
-                  <summary className="p-3.5 font-bold text-xs cursor-pointer flex justify-between items-center bg-white hover:bg-slate-50 select-none">
+                  <summary className="p-3.5 font-black text-xs cursor-pointer flex justify-between items-center bg-white hover:bg-slate-50 select-none">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">🧾</span>
+                      <span aria-hidden="true" className="text-slate-600 text-xs">🧾</span>
                       <div>
-                        <p className="font-black text-slate-800 text-xs">
-                          {grupo.mercado} - <span className="text-slate-500">{grupo.data}</span>
+                        <p className="font-black text-slate-900 text-xs">
+                          {grupo.mercado} - <span className="text-slate-600 font-bold">{grupo.data}</span>
                         </p>
-                        <p className="text-[10px] text-slate-400 font-medium">
+                        <p className="text-[10px] text-slate-600 font-bold">
                           {grupo.itens.length} produto(s) no folheto/escaneamento
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-emerald-700 text-xs">
+                      <span className="font-black text-emerald-800 text-xs">
                         R$ {grupo.total.toFixed(2)}
                       </span>
-                      <span className="text-slate-400 text-[10px] group-open:rotate-180 transition-transform">
+                      <span aria-hidden="true" className="text-slate-600 text-[10px] group-open:rotate-180 transition-transform">
                         ▼
                       </span>
                     </div>
                   </summary>
 
-                  <div className="p-3 bg-slate-50 border-t border-slate-100 space-y-1.5">
+                  <div className="p-3 bg-slate-50 border-t-2 border-slate-200 space-y-1.5">
                     {grupo.itens.map((item) => {
                       const donoDoItem = (item.usuarioId && item.usuarioId === usuarioAtualId) || (item.usuario?.id === usuarioAtualId);
 
                       return (
                         <div
                           key={item.id}
-                          className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-200"
+                          className="flex justify-between items-center text-xs bg-white p-2.5 rounded-xl border border-slate-300"
                         >
                           <div className="pr-2">
-                            <p className="font-bold text-slate-800 text-xs">{item.produto}</p>
+                            <p className="font-black text-slate-900 text-xs">{item.produto}</p>
                             <div className="flex gap-1 items-center mt-0.5">
-                              <span className="text-[9px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200 inline-block">
+                              <span className="text-[9px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300 inline-block">
                                 ⏳ {calcularTempoRestante(item.createdAt)}
                               </span>
                               {item.usuario?.nome && (
-                                <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                <span className="text-[9px] bg-slate-200 text-slate-800 font-bold px-1.5 py-0.5 rounded">
                                   Por: {item.usuario.nome}
                                 </span>
                               )}
@@ -516,13 +534,13 @@ export default function HistoricoPage() {
                             <p className="font-black text-slate-900 text-xs whitespace-nowrap">
                               R$ {Number(item.preco).toFixed(2)}
                             </p>
-                            {/* Permite exclusão apenas se for o autor do escaneamento */}
                             {donoDoItem && (
                               <button
                                 type="button"
                                 onClick={(e) => deletarItem(item.id, e)}
-                                className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                className="p-1.5 text-slate-500 hover:text-red-700 font-black min-w-[36px] min-h-[36px]"
                                 title="Excluir Meu Item Escaneado"
+                                aria-label={`Excluir item ${item.produto}`}
                               >
                                 🗑️
                               </button>
@@ -539,18 +557,21 @@ export default function HistoricoPage() {
         </section>
       </div>
 
-      {/* RODAPÉ */}
-      <nav className="bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
-        <Link href="/listas" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
-          <span className="text-base">📋</span> Listas
+      {/* RODAPÉ NAVEGAÇÃO ACESSÍVEL */}
+      <nav aria-label="Navegação principal" className="bg-white border-t-2 border-slate-300 px-4 py-2 flex justify-around items-center fixed bottom-0 left-0 right-0 z-10 shadow-lg">
+        <Link href="/listas" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-slate-700 text-xs font-bold hover:text-emerald-800">
+          <span aria-hidden="true" className="text-lg">📋</span>
+          <span>Listas</span>
         </Link>
-        <Link href="/comparar" className="flex flex-col items-center text-slate-400 text-xs font-bold hover:text-emerald-600">
-          <span className="text-base">📷</span> Folheto/Gondola
+        <Link href="/comparar" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-slate-700 text-xs font-bold hover:text-emerald-800">
+          <span aria-hidden="true" className="text-lg">📷</span>
+          <span>Folheto/Gôndola</span>
         </Link>
-        <Link href="/historico" className="flex flex-col items-center text-emerald-600 text-xs font-bold">
-          <span className="text-base">📊</span> Comparação/Histórico
+        <Link href="/historico" aria-current="page" className="flex flex-col items-center min-w-[48px] min-h-[48px] justify-center text-emerald-800 text-xs font-black">
+          <span aria-hidden="true" className="text-lg">📊</span>
+          <span>Histórico</span>
         </Link>
       </nav>
-    </div>
+    </main>
   );
 }

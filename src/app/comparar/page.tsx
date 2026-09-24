@@ -47,7 +47,7 @@ export default function CompararPage() {
       }, 150);
     } catch (err: any) {
       console.error("Erro ao acessar câmera:", err);
-      setMensagem("⚠️ Câmera não detectada ou permissão negada. Selecione um arquivo.");
+      setMensagem("⚠️ Erro de conexão ou instabilidade na rede. Tente novamente.");
       inputArquivoRef.current?.click();
     }
   };
@@ -120,10 +120,11 @@ export default function CompararPage() {
         setMensagem(`✅ Sucesso! ${data.totalProcessados || 0} oferta(s) salva(s) na sua conta!`);
         setImagemBase64(null);
       } else {
-        setMensagem(`❌ ${data.error || data.message || 'Falha ao processar imagem.'}`);
+        setMensagem('⚠️ Erro de conexão ou instabilidade na rede. Tente novamente.');
       }
-    } catch (err: any) {
-      setMensagem(`❌ Erro de conexão com o servidor: ${err.message || ''}`);
+    } catch (err) {
+      console.error('Erro técnico interno do scan:', err);
+      setMensagem('⚠️ Erro de conexão ou instabilidade na rede. Tente novamente.');
     } finally {
       setCarregando(false);
     }
